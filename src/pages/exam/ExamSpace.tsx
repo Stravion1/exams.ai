@@ -125,6 +125,11 @@ export function ExamSpace({ slug }: { slug: string }) {
     const most = Math.max(...topics.map((t) => t.years))
     return topics.filter((t) => t.years === most).length
   }, [topics])
+  /* The years the papers here actually cover, for the chapter note. */
+  const covered = useMemo(() => {
+    const years = topics.flatMap((t) => [t.first, t.latest]).filter((y) => y > 0 && y < 9999)
+    return years.length ? `${Math.min(...years)} to ${Math.max(...years)}` : ''
+  }, [topics])
   const [jobs, setJobs] = useState<Record<string, Job>>({})
   const [busy, setBusy] = useState(false)
   const [aiReady, setAiReady] = useState<boolean | null>(null)
@@ -368,7 +373,7 @@ export function ExamSpace({ slug }: { slug: string }) {
           </div>
 
           <dl className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Papers" value={papers.length} />
+            <Stat label="Papers you added" value={papers.length} />
             <Stat label="Distinct questions" value={stats.total} />
             <Stat label="Chapters in every sitting" value={everySitting} accent />
             <Stat label="Subjects" value={stats.subjects.length} />
@@ -376,8 +381,8 @@ export function ExamSpace({ slug }: { slug: string }) {
 
           {everySitting > 0 && (
             <p className="mt-3 text-[12.5px] text-faint">
-              {everySitting} of the {topics.length} chapters appear in every NEET sitting the papers here cover, 2016 to 2026. Questions do not
-              repeat word for word, so those chapters lead the ranking instead.
+              {everySitting} of the {topics.length} chapters appear in every {exam.short} sitting the papers here cover{covered ? `, ${covered}` : ''}. Questions
+              do not repeat word for word, so those chapters lead the ranking instead.
             </p>
           )}
 
@@ -409,7 +414,7 @@ export function ExamSpace({ slug }: { slug: string }) {
 
         {aiReady === false && (
           <Notice tone="error" className="mb-6">
-            <strong className="font-semibold">No model connected.</strong> Add <code className="rounded bg-black/30 px-1.5 py-0.5">AI_API_KEY</code> to
+            <strong className="font-semibold">No model connected.</strong> Add <code className="rounded bg-black/30 px-1.5 py-0.5">AI_API_KEY</code> to{' '}
             <code className="mx-1 rounded bg-black/30 px-1.5 py-0.5">.dev.vars</code> (or run <code className="rounded bg-black/30 px-1.5 py-0.5">wrangler secret put AI_API_KEY</code>)
             and restart. Reading and mining papers needs the model.
           </Notice>
@@ -430,7 +435,7 @@ export function ExamSpace({ slug }: { slug: string }) {
         )}
         {tab === 'bank' && <BankTab rows={rows} exam={exam} aiReady={aiReady === true} onPractise={() => setTab('practice')} />}
         {tab === 'practice' && <PracticeTab rows={rows} aiReady={aiReady === true} onBrowse={() => setTab('bank')} />}
-        {tab === 'mock' && <MockTab rows={rows} aiReady={aiReady === true} />}
+        {tab === 'mock' && <MockTab rows={rows} aiReady={aiReady === true} exam={exam} />}
         {tab === 'ask' && <AskTab exam={exam} rows={rows} />}
       </div>
     </div>

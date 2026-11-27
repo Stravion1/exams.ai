@@ -6,11 +6,12 @@ import { EmptyState } from '../../components/EmptyState'
 import { ProgressBar, ScoreRing } from '../../components/Progress'
 import type { BankRow } from '../../lib/archive'
 import { cx } from '../../lib/cx'
+import type { Exam } from '../../lib/exams'
 import { Explanation } from './Explanation'
 
 /*
-  A full NEET mock: 180 questions in 200 minutes with the real split and the
-  real marking (+4 correct, -1 wrong, 0 unattempted).
+  A full mock in the exam's own printed pattern: its question count, its
+  duration and its marking (+4 correct, -1 wrong, 0 unattempted in NEET).
 
   Questions are drawn from the bank in priority order inside each subject, so a
   paper is always the most repeated and most-asked material available rather
@@ -20,16 +21,38 @@ import { Explanation } from './Explanation'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
 
-const PATTERN = {
-  minutes: 200,
-  marks: 4,
-  penalty: -1,
-  sections: [
-    { subject: 'Physics', count: 45 },
-    { subject: 'Chemistry', count: 45 },
-    { subject: 'Biology', count: 90 },
-  ],
-} as const
+/* NEET prints Biology at double weight, so its split is spelled out. */
+const NEET_SECTIONS = [
+  { subject: 'Physics', count: 45 },
+  { subject: 'Chemistry', count: 45 },
+  { subject: 'Biology', count: 90 },
+]
+
+/** Divide the paper's questions as evenly as possible over its subjects. */
+const spread = (subjects: readonly string[], total: number) => {
+  const each = Math.floor(total / Math.max(1, subjects.length))
+  return subjects.map((subject, i) => ({ subject, count: i === subjects.length - 1 ? total - each * (subjects.length - 1) : each }))
+}
+
+/**
+ * The paper this exam sets. Exams whose shape changes every year (JEE Advanced,
+ * GATE) print no fixed count, so they get no mock rather than a NEET paper
+ * wearing their name.
+ */
+function patternFor(exam: Exam) {
+  const { questions, minutes, marks } = exam.pattern
+  if (!questions || !minutes) return null
+  // `marks` is the whole paper's total (NEET: 720), so score per question comes
+  // from dividing it by the question count. Both NEET and JEE Main print +4/-1.
+  const perQuestion = marks ? Math.round(marks / questions) : 4
+  return {
+    minutes,
+    marks: perQuestion,
+    // A paper that prints no negative marking gets none here either.
+    penalty: exam.pattern.negative ? -1 : 0,
+    sections: exam.slug === 'neet-ug' ? NEET_SECTIONS.map((s) => ({ ...s })) : spread(exam.subjects, questions),
+  }
+}
 
 type Phase = 'setup' | 'running' | 'result'
 
@@ -40,7 +63,8 @@ const clock = (seconds: number) => {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }) {
+export function MockTab({ rows, aiReady, exam }: { rows: BankRow[]; aiReady: boolean; exam: Exam }) {
+  const pattern = useMemo(() => patternFor(exam), [exam])
   const [phase, setPhase] = useState<Phase>('setup')
   const [deck, setDeck] = useState<BankRow[]>([])
   const [answers, setAnswers] = useState<(number | null)[]>([])
@@ -60,8 +84,8 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
   const available = useMemo(() => {
     const counts = new Map<string, number>()
     for (const r of usable) counts.set(r.question.subject, (counts.get(r.question.subject) ?? 0) + 1)
-    return PATTERN.sections.map((s) => ({ ...s, have: counts.get(s.subject) ?? 0 }))
-  }, [usable])
+    return (pattern?.sections ?? []).map((s) => ({ ...s, have: counts.get(s.subject) ?? 0 }))
+  }, [usable, pattern])
 
   const short = available.find((s) => s.have < s.count)
   const canStart = usable.length > 0 && !short
@@ -75,27 +99,39 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
   const left = Math.max(0, Math.round((deadline - now) / 1000))
 
   useEffect(() => {
-    if (phase !== 'running' || left > 0) return
-    setUsedSeconds(PATTERN.minutes * 60)
+    if (phase !== 'running' || left > 0 || !pattern) return
+    setUsedSeconds(pattern.minutes * 60)
     setPhase('result')
-  }, [left, phase])
+  }, [left, phase, pattern])
 
   function start() {
+    if (!pattern) return
     const picked: BankRow[] = []
-    for (const section of PATTERN.sections) {
+    for (const section of pattern.sections) {
       picked.push(...usable.filter((r) => r.question.subject === section.subject).slice(0, section.count))
     }
     setDeck(picked)
     setAnswers(new Array(picked.length).fill(null))
     setIndex(0)
-    setDeadline(Date.now() + PATTERN.minutes * 60 * 1000)
+    setDeadline(Date.now() + pattern.minutes * 60 * 1000)
     setNow(Date.now())
     setPhase('running')
   }
 
   function finish() {
-    setUsedSeconds(Math.min(PATTERN.minutes * 60, Math.max(0, PATTERN.minutes * 60 - left)))
+    const seconds = (pattern?.minutes ?? 0) * 60
+    setUsedSeconds(Math.min(seconds, Math.max(0, seconds - left)))
     setPhase('result')
+  }
+
+  if (!pattern) {
+    return (
+      <EmptyState
+        icon={<Flag aria-hidden className="size-6" />}
+        title="No fixed paper to mock"
+        body={`${exam.name} does not print a fixed question count or duration, so there is no full paper to build here yet. Practise from the bank instead.`}
+      />
+    )
   }
 
   if (!rows.length) {
@@ -103,19 +139,19 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
       <EmptyState
         icon={<Flag aria-hidden className="size-6" />}
         title="No questions to build a paper from"
-        body="A mock needs the bank. Upload NEET papers or open this page with the bundled archive so there are enough questions per subject."
+        body={`A mock needs the bank. Upload ${exam.short} papers with their answer keys so there are enough questions per subject.`}
       />
     )
   }
 
   if (phase === 'setup') {
-    const total = deck.length || PATTERN.sections.reduce((n, s) => n + s.count, 0)
+    const total = deck.length || pattern.sections.reduce((n, s) => n + s.count, 0)
     return (
       <div className="grid gap-6">
         <div className="glass rounded-[28px] p-6 sm:p-8">
           <h2 className="text-[22px] font-medium tracking-[-0.03em]">Full mock test</h2>
           <p className="mt-1.5 max-w-2xl text-[14.5px] text-muted">
-            One paper in the real pattern: {PATTERN.minutes} minutes, +{PATTERN.marks} for a correct answer, {PATTERN.penalty}{' '}
+            One paper in the real pattern: {pattern.minutes} minutes, +{pattern.marks} for a correct answer, {pattern.penalty}{' '}
             for a wrong one, nothing for a blank.
           </p>
           {disputed > 0 && (
@@ -129,8 +165,8 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
               <div key={s.subject} className="rounded-2xl border border-line bg-white/3 px-4 py-3">
                 <dt className="text-[12px] text-faint">{s.subject}</dt>
                 <dd className="text-[20px] font-medium tabular-nums">
-                  {s.count}
-                  <span className="ml-1 text-[12px] font-normal text-faint">of {s.have} in bank</span>
+                                    {s.count}{' '}
+                  <span className="text-[12px] font-normal text-faint">of {s.have} in bank</span>
                 </dd>
               </div>
             ))}
@@ -151,7 +187,7 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
           ) : null}
 
           <Button variant="paper" size="lg" className="mt-6" iconRight={<Clock3 className="size-4" />} disabled={!canStart} onClick={start}>
-            Start the {PATTERN.minutes}-minute paper
+            Start the {pattern.minutes}-minute paper
           </Button>
         </div>
       </div>
@@ -278,10 +314,10 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
     else if (given === deck[i].question.answer) correct++
     else wrong++
   }
-  const score = correct * PATTERN.marks + wrong * PATTERN.penalty
-  const max = deck.length * PATTERN.marks
+  const score = correct * pattern.marks + wrong * pattern.penalty
+  const max = deck.length * pattern.marks
 
-  const bySubject = PATTERN.sections.map((s) => {
+  const bySubject = pattern.sections.map((s) => {
     const items = deck.map((r, i) => ({ r, i })).filter(({ r }) => r.question.subject === s.subject)
     const got = items.filter(({ r, i }) => answers[i] === r.question.answer).length
     const missed = items.filter(({ r, i }) => answers[i] !== null && answers[i] !== undefined && answers[i] !== r.question.answer).length
@@ -317,12 +353,12 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
           {score >= max * 0.75 ? 'That is a strong paper' : score >= max * 0.5 ? 'A workable score' : 'Plenty to gain here'}
         </h2>
         <p className="mt-2 max-w-md text-[14.5px] text-muted">
-          {correct} correct, {wrong} wrong, {blank} left blank · {clock(usedSeconds)} of {PATTERN.minutes} minutes used.
+          {correct} correct, {wrong} wrong, {blank} left blank · {clock(usedSeconds)} of {pattern.minutes} minutes used.
         </p>
         <dl className="mt-6 grid w-full max-w-lg grid-cols-3 gap-3">
           {[
-            { label: 'Correct', value: `+${correct * PATTERN.marks}` },
-            { label: 'Wrong', value: `${wrong * PATTERN.penalty}` },
+            { label: 'Correct', value: `+${correct * pattern.marks}` },
+            { label: 'Wrong', value: `${wrong * pattern.penalty}` },
             { label: 'Blank', value: '0' },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl border border-line bg-white/3 px-3 py-2">

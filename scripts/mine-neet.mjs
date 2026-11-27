@@ -71,9 +71,12 @@ function readable(s) {
  */
 const FURNITURE = [
   /Practise\s+.{0,80}?online with instant answer checking/i,
-  /prepwiser\.in\/neet\/learn/i,
+  /prepwiser\.in\/neet\/(learn|questions)/i,
   /PrepWiser\s*·/i,
   /PrepWiser\.?$/i,
+  /\bAnswer keys?:/i,
+  /\bAnswers? follow\b/i,
+  /\bStep-by-step solution\b/i,
   /\bRe-?NEET\b.*$/i,
   /\bNEET\s+\d{4}\b.*$/i,
   /\b\d{1,2}\s*\/\s*\d{1,2}\s*$/,
@@ -86,7 +89,9 @@ function cleanOption(s) {
     changed = false
     for (const re of FURNITURE) {
       const at = out.search(re)
-      if (at > 0) {
+      // A marker at index 0 means the whole option is furniture (a promo line
+      // swallowed the option); cutting at 0 empties it and the row is dropped.
+      if (at >= 0) {
         out = out.slice(0, at)
         changed = true
       }
@@ -94,6 +99,17 @@ function cleanOption(s) {
   }
   return tidy(out).replace(/[›>]+$/, '').trim()
 }
+
+/**
+ * A printed option is never one of these on its own. They are the debris left
+ * when a stem's own (a)/(b) list was split as if it were the option block.
+ * Single characters are fine: numeric answers ("1" - "4") and the A/B/C/D labels
+ * of figure questions are real options.
+ */
+const JUNK_OPTION = /^(and|or|only|both|none|all|is|are|the|of|in|to|,|\.|;|:|-|—|\(|\))$/i
+
+const usableOptions = (options) =>
+  options.length === 4 && options.every((o) => o.trim().length >= 1 && !JUNK_OPTION.test(o.trim()))
 
 function cleanBody(s, cap) {
   const out = tidy(s)
@@ -125,26 +141,70 @@ const SUBJECT_OF = Object.fromEntries([
 /* Every chapter not named above is from the Biology syllabus. */
 const subjectOfTopic = (topic) => SUBJECT_OF[topic] ?? 'Biology'
 
-/** Split an options block on (a)(b)(c)(d) or (1)(2)(3)(4), first run only. */
-function splitOptions(seg) {
-  const digits = [...seg.matchAll(/\((\d)\)/g)]
-  const letters = [...seg.matchAll(/\(([a-fA-F])\)/g)]
-  const useLetters = letters.length > 0 && (digits.length === 0 || letters[0].index < digits[0].index)
-  const marks = useLetters ? letters : digits
-  if (!marks.length) return { options: [], style: useLetters ? 'letter' : 'digit' }
+/**
+ * Find the printed options inside a block and split them.
+ *
+ * NEET prints four options, marked (1)-(4) or (a)-(d). A stem often carries its
+ * own list marked the other way ("(a) In roots (b) In stems ..."), and some
+ * options mention "(1) and (2)" in their text. Splitting on the first marker
+ * therefore cut stems and option text into fragments — one in four broken rows
+ * even had a meaningless answer such as "and".
+ *
+ * So look for a run of four sequential markers with each slice carrying text,
+ * and prefer the run that starts latest in the block: the options come after
+ * the stem, so the last complete run is the printed option list.
+ */
+const STYLES = [
+  { style: 'digit', re: /\(\s*([1-6])\s*\)/g, value: (m) => Number(m[1]) },
+  { style: 'letter', re: /\(\s*([a-fA-F])\s*\)/g, value: (m) => m[1].toLowerCase().charCodeAt(0) - 96 },
+]
 
-  const options = []
-  let expected = 0
-  for (let i = 0; i < marks.length; i++) {
-    const m = marks[i]
-    const value = useLetters ? m[1].toLowerCase().charCodeAt(0) - 97 : Number(m[1]) - 1
-    if (value !== expected) continue
-    const end = i + 1 < marks.length ? marks[i + 1].index : seg.length
-    options.push(tidy(seg.slice(m.index + m[0].length, end)))
-    expected++
-  }
-  return { options, style: useLetters ? 'letter' : 'digit' }
+/**
+ * A printed option marker sits at the start of its own run of text: the papers
+ * indent it ("(1)   text") or break the line before it. A marker inside option
+ * text ("(a) - Replication", "(A) and (B) only") is just a letter in a sentence
+ * and fails both tests, which is what tells the two apart.
+ */
+function printedMarker(seg, m) {
+  const before = seg.slice(Math.max(0, m.index - 4), m.index)
+  const after = seg.slice(m.end, m.end + 4)
+  const startsLine = m.index === 0 || /(^|\n)[ \t]*$/.test(before)
+  const leads = startsLine || /\s{2,}$/.test(before)
+  const gaps = /^[ \t]{2,}/.test(after) || after === '' || /^\s*$/.test(after) || /^\n/.test(after)
+  return leads && gaps
 }
+
+/** The first run of four sequential markers in `marks`, split into options. */
+function runOfFour(seg, marks, style) {
+  for (let i = 0; i + 3 < marks.length; i++) {
+    const run = marks.slice(i, i + 4)
+    if (!run.every((m, k) => m.value === k + 1)) continue
+    const slices = run.map((m, k) => tidy(seg.slice(m.end, k === 3 ? seg.length : run[k + 1].index)))
+    if (!slices.every((s) => s.length > 0)) continue
+    return { at: run[0].index, options: slices, style }
+  }
+  return null
+}
+
+function findOptions(seg) {
+  /* Prefer the printed marks; fall back to plain markers when a PDF is spaced
+     too tightly to show the difference. */
+  for (const filter of [true, false]) {
+    let best = null
+    for (const { style, re, value } of STYLES) {
+      const marks = [...seg.matchAll(re)]
+        .map((m) => ({ index: m.index, end: m.index + m[0].length, value: value(m) }))
+        .filter((m) => !filter || printedMarker(seg, m))
+      const found = runOfFour(seg, marks, style)
+      // The option list sits where the stem ends, so the earliest run wins.
+      if (found && (!best || found.at < best.at)) best = found
+    }
+    if (best) return best
+  }
+  return { at: -1, options: [], style: 'digit' }
+}
+
+const splitOptions = (seg) => findOptions(seg)
 
 const answerIndex = (token) => {
   const t = token.trim().toLowerCase()
@@ -158,7 +218,7 @@ function parseFullPaper(text, meta) {
   const cut = Math.max(...starts.map((m) => Number(m[1])), 0) <= 180 ? 45 : 50
   const questions = []
   const seen = new Set()
-  const skipped = { noAnswer: 0, fewOptions: 0, shortStem: 0, duplicate: 0, table: 0 }
+  const skipped = { noAnswer: 0, fewOptions: 0, options: 0, shortStem: 0, duplicate: 0, table: 0 }
 
   for (let i = 0; i < starts.length; i++) {
     const from = starts[i].index
@@ -188,14 +248,14 @@ function parseFullPaper(text, meta) {
     }
 
     const optionsEnd = answerAt
-    const { options, style } = splitOptions(
+    const { options: rawOptions, style } = splitOptions(
       optionsAt > -1 ? block.slice(optionsAt, optionsEnd) : '',
     )
+    const options = rawOptions.map(cleanOption)
     const answer = style === 'digit' && /^\d$/.test(answerToken.trim()) ? Number(answerToken) - 1 : answerIndex(answerToken)
 
-    const filled = options.filter((o) => o.length > 0)
-    if (filled.length < 2 || answer < 0 || answer >= options.length || !options[answer]) {
-      skipped.fewOptions++
+    if (!usableOptions(options) || answer < 0 || answer >= options.length) {
+      skipped.options++
       continue
     }
 
@@ -244,7 +304,7 @@ function parsePrepwiser(text, meta) {
 
   const heads = [...text.matchAll(/Q(\d+)\s+[^,\n]{2,60}?,?\s*Q(\d+)\s+Step-by-step solution/g)]
   const questions = []
-  const skipped = { noAnswer: 0, fewOptions: 0, shortStem: 0, duplicate: 0, table: 0 }
+  const skipped = { noAnswer: 0, fewOptions: 0, options: 0, shortStem: 0, duplicate: 0, table: 0 }
   const seen = new Set()
 
   for (let i = 0; i < heads.length; i++) {
@@ -265,11 +325,11 @@ function parsePrepwiser(text, meta) {
     /* The Q-line is followed by its solution link; the stem starts after it. */
     const urlEnd = body.match(/prepwiser\.in\/neet\/questions\/\S+/i)
     const inner = urlEnd ? body.slice(urlEnd.index + urlEnd[0].length) : body
-    const { options: rawOptions } = splitOptions(inner)
+    const { options: rawOptions, at } = splitOptions(inner)
     // Page furniture gets swallowed into the last option; strip it.
     const options = rawOptions.map(cleanOption)
-    const cut = inner.search(/\(\d\)|\([a-fA-F]\)/)
-    const stem = tidy(cut > -1 ? inner.slice(0, cut) : inner).replace(/^[›>\s]+/, '')
+    // The stem is everything before the option list that was actually found.
+    const stem = tidy(at > -1 ? inner.slice(0, at) : inner).replace(/^[›>\s]+/, '')
     if (normalisePrompt(stem).length < 12) {
       skipped.shortStem++
       continue
@@ -279,9 +339,8 @@ function parsePrepwiser(text, meta) {
       continue
     }
 
-    const filled = options.filter((o) => o.length > 0)
-    if (filled.length < 2 || answer >= options.length || !options[answer]) {
-      skipped.fewOptions++
+    if (!usableOptions(options) || answer < 0 || answer >= options.length) {
+      skipped.options++
       continue
     }
 
@@ -324,7 +383,7 @@ const yearOf = (name) => Number(name.match(/(20\d\d)/)?.[1] ?? 0) || null
 console.log(`pdfs=${FILES.length} fullPapers=${fullPapers.length} chapterSets=${prepwiser.length}\n`)
 
 const bank = []
-let fullTotals = { questions: 0, skipped: { noAnswer: 0, fewOptions: 0, shortStem: 0, duplicate: 0, table: 0 } }
+let fullTotals = { questions: 0, skipped: { noAnswer: 0, fewOptions: 0, options: 0, shortStem: 0, duplicate: 0, table: 0 } }
 
 for (const name of fullPapers) {
   const text = await textOf(join(ROOT, name))
