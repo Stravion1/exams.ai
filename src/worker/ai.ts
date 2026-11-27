@@ -120,42 +120,74 @@ Reply with one JSON object and nothing else, using exactly these keys:
 
 type Msg = { role: 'system' | 'user' | 'assistant'; content: string }
 
-async function complete(cfg: AiConfig, messages: Msg[], maxTokens: number, timeoutMs: number): Promise<string> {
-  let res: Response
+async function send(cfg: AiConfig, body: Record<string, unknown>, timeoutMs: number): Promise<Response> {
   try {
-    res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    return await fetch(`${cfg.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${cfg.key}`,
         'accept-language': 'en-US,en',
       },
-      body: JSON.stringify({ model: cfg.model, messages, temperature: 0.4, max_tokens: maxTokens }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
-    throw new AiError(timedOut ? 'The model took too long to answer. Try again.' : 'The model could not be reached. Check AI_BASE_URL.')
+    throw new AiError(
+      timedOut ? 'The model took too long to answer. Try again.' : 'The model could not be reached. Check AI_BASE_URL.',
+    )
   }
+}
 
-  if (!res.ok) {
-    const raw = await res.text().catch(() => '')
-    let detail = ''
-    try {
-      const j = JSON.parse(raw) as { error?: { message?: string } | string; message?: string }
-      detail = typeof j.error === 'string' ? j.error : (j.error?.message ?? j.message ?? '')
-    } catch {
-      detail = raw
-    }
-    const status = res.status === 401 || res.status === 403 ? 'The AI key was rejected.' : `The model answered ${res.status}.`
-    throw new AiError(detail ? `${status} ${detail.slice(0, 200)}` : `${status} Check AI_API_KEY and AI_MODEL.`)
+/** Turn a provider error response into something a student can read. */
+async function providerError(status: number, raw: string): Promise<never> {
+  let detail = ''
+  try {
+    const j = JSON.parse(raw) as { error?: { message?: string } | string; message?: string }
+    detail = typeof j.error === 'string' ? j.error : (j.error?.message ?? j.message ?? '')
+  } catch {
+    detail = raw
   }
+  const head = status === 401 || status === 403 ? 'The AI key was rejected.' : `The model answered ${status}.`
+  throw new AiError(detail ? `${head} ${detail.slice(0, 200)}` : `${head} Check AI_API_KEY and AI_MODEL.`)
+}
 
-  const data = (await res.json().catch(() => null)) as { choices?: { message?: { content?: unknown } }[] } | null
+function readContent(data: { choices?: { message?: { content?: unknown } }[] } | null): string {
   const content = data?.choices?.[0]?.message?.content
   if (typeof content !== 'string' || !content.trim()) throw new AiError('The model returned an empty answer. Try again.')
   return content
 }
+
+async function complete(cfg: AiConfig, messages: Msg[], maxTokens: number, timeoutMs: number): Promise<string> {
+  const res = await send(
+    cfg,
+    { model: cfg.model, messages, temperature: 0.4, max_tokens: maxTokens },
+    timeoutMs,
+  )
+  if (res.ok) return readContent((await res.json().catch(() => null)) as ChatResponse)
+
+  const raw = await res.text().catch(() => '')
+
+  /*
+    Newer OpenAI models (o-series, gpt-5 family) reject the classic parameters
+    with a 400 naming max_tokens or temperature. Retry once in their dialect
+    before giving up, so AI_MODEL can be any model the endpoint serves.
+  */
+  if (res.status === 400 && /max_tokens|max_completion_tokens|temperature/i.test(raw)) {
+    const retry = await send(
+      cfg,
+      { model: cfg.model, messages, max_completion_tokens: Math.max(maxTokens, 256) },
+      timeoutMs,
+    )
+    if (retry.ok) return readContent((await retry.json().catch(() => null)) as ChatResponse)
+    return providerError(retry.status, await retry.text().catch(() => ''))
+  }
+
+  return providerError(res.status, raw)
+}
+
+type ChatResponse = { choices?: { message?: { content?: unknown } }[] } | null
 
 /** Models sometimes fence JSON or add a sentence first; take the object out of it. */
 function readJson(raw: string): Record<string, unknown> | null {
