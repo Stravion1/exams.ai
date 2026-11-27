@@ -400,6 +400,52 @@ for (const q of all) {
 
 console.log(`explanations: ${donors.length} printed in the papers, ${inherited} borrowed from the same question in another paper`)
 
+/*
+  The full papers never name a chapter; the chapter sets do. Without this the
+  mock test's chapter analysis collapses into one "unclassified" bucket, so a
+  full-paper question borrows the chapter of the same question in a set.
+*/
+const topicDonors = all.filter((q) => q.topic)
+const topicIndex = new Map()
+for (let i = 0; i < topicDonors.length; i++) {
+  for (const w of new Set(normalisePrompt(topicDonors[i].prompt).split(' ').filter(Boolean))) {
+    if (w.length < 6) continue
+    const list = topicIndex.get(w)
+    if (list) list.push(i)
+    else topicIndex.set(w, [i])
+  }
+}
+
+let taggedChapters = 0
+for (const q of all) {
+  if (q.topic) continue
+  const tokens = new Set(normalisePrompt(q.prompt).split(' ').filter(Boolean))
+  const candidates = new Set()
+  for (const w of tokens) {
+    if (w.length < 6) continue
+    for (const i of topicIndex.get(w) ?? []) candidates.add(i)
+  }
+
+  let best = null
+  let bestSim = 0
+  for (const i of candidates) {
+    const donor = topicDonors[i]
+    if (donor.subject !== q.subject) continue
+    const sim = similarity(q.prompt, donor.prompt)
+    if (sim < 0.85 || sim <= bestSim) continue
+    best = donor
+    bestSim = sim
+  }
+
+  if (best) {
+    q.topic = best.topic
+    taggedChapters++
+  }
+}
+
+const stillUnclassified = all.filter((q) => !q.topic).length
+console.log(`chapters: ${taggedChapters} full-paper questions took a chapter from a matching set, ${stillUnclassified} still unnamed`)
+
 const byKey = new Map()
 for (const q of all) {
   const k = q.key || promptHash(q.prompt)

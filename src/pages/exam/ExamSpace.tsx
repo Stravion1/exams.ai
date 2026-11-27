@@ -30,12 +30,13 @@ import { extractText } from '../../lib/pdf'
 import { MAX_FILES } from '../../shared/validate'
 import { AskTab } from './AskTab'
 import { BankTab } from './BankTab'
+import { MockTab } from './MockTab'
 import { PapersTab } from './PapersTab'
 import { PracticeTab } from './PracticeTab'
 
 export type Job = { name: string; stage: string; pct: number }
 
-type Tab = 'papers' | 'bank' | 'practice' | 'ask'
+type Tab = 'papers' | 'bank' | 'practice' | 'mock' | 'ask'
 
 type Mined = { subject: string; topic: string; prompt: string; options: string[]; answer: number; why: string }
 
@@ -386,6 +387,7 @@ export function ExamSpace({ slug }: { slug: string }) {
                 { value: 'papers', label: `Papers${papers.length ? ` (${papers.length})` : ''}` },
                 { value: 'bank', label: `Question bank${stats.total ? ` (${stats.total})` : ''}` },
                 { value: 'practice', label: 'Practice' },
+                { value: 'mock', label: 'Mock test' },
                 { value: 'ask', label: 'Ask' },
               ]}
             />
@@ -425,6 +427,7 @@ export function ExamSpace({ slug }: { slug: string }) {
         )}
         {tab === 'bank' && <BankTab rows={rows} exam={exam} aiReady={aiReady === true} onPractise={() => setTab('practice')} />}
         {tab === 'practice' && <PracticeTab rows={rows} aiReady={aiReady === true} onBrowse={() => setTab('bank')} />}
+        {tab === 'mock' && <MockTab rows={rows} aiReady={aiReady === true} />}
         {tab === 'ask' && <AskTab exam={exam} rows={rows} />}
       </div>
     </div>
