@@ -1,11 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Check, CircleCheck, CircleX, ListChecks, RotateCcw, X } from 'lucide-react'
 
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/EmptyState'
 import { Notice } from '../../components/Notice'
 import { ProgressBar, ScoreRing } from '../../components/Progress'
-import type { BankRow } from '../../lib/archive'
+import type { Attempt, BankRow } from '../../lib/archive'
+import {
+  attemptStats,
+  clearAttempts,
+  dueKeys,
+  listAttempts,
+  masteryByChapter,
+  newId,
+  questionKey,
+  saveAttempt,
+  weakChapters,
+} from '../../lib/archive'
 import { cx } from '../../lib/cx'
 import { Explanation } from './Explanation'
 
@@ -23,6 +34,25 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
   const [choice, setChoice] = useState<number | null>(null)
   const [checked, setChecked] = useState(false)
   const [answers, setAnswers] = useState<number[]>([])
+  const [attempts, setAttempts] = useState<Attempt[]>([])
+
+  // Every answer is kept, so mastery and missed questions survive a reload.
+  const examSlug = rows[0]?.question.exam
+  useEffect(() => {
+    if (!examSlug) return
+    let live = true
+    listAttempts(examSlug)
+      .then((rows) => live && setAttempts(rows))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [examSlug, rows.length])
+
+  const record = attemptStats(attempts)
+  const due = useMemo(() => dueKeys(attempts), [attempts])
+  const weak = useMemo(() => weakChapters(attempts), [attempts])
+  const chapters = useMemo(() => masteryByChapter(attempts), [attempts])
 
   const subjects = useMemo(() => [...new Set(rows.map((r) => r.question.subject))].sort(), [rows])
   const pool = useMemo(() => rows.filter((r) => subject === 'All' || r.question.subject === subject), [rows, subject])
@@ -44,7 +74,19 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
   }
 
   const start = () => {
-    const picked = [...pool].sort((a, b) => b.importance - a.importance).slice(0, count)
+    /*
+      Missed questions come back first, most-missed at the front, then the rest
+      by importance. A question stays in the queue until it is answered right.
+    */
+    const missed = (r: BankRow) => due.get(questionKey(r.question)) ?? 0
+    const picked = [...pool]
+      .sort((a, b) => {
+        const ma = missed(a)
+        const mb = missed(b)
+        if (ma !== mb) return mb - ma
+        return b.importance - a.importance
+      })
+      .slice(0, count)
     if (!picked.length) return
     setDeck(picked)
     setAnswers([])
@@ -102,7 +144,54 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
 
           <p className="mt-5 text-[13px] text-faint">
             {pool.length} questions available{repeats ? ` · ${repeats} of them repeat across papers` : ''}
+            {due.size ? ` · ${due.size} missed ${due.size === 1 ? 'question' : 'questions'} will come back first` : ''}
           </p>
+
+          {attempts.length > 0 && (
+            <div className="mt-4 rounded-[18px] border border-line bg-white/3 p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-[13.5px] font-medium">Your record</p>
+                <button
+                  type="button"
+                  className="text-[12.5px] text-faint underline-offset-2 hover:text-fg hover:underline"
+                  onClick={async () => {
+                    if (!examSlug) return
+                    await clearAttempts(examSlug)
+                    setAttempts([])
+                  }}
+                >
+                  Clear my record
+                </button>
+              </div>
+              <p className="mt-1 text-[13px] text-muted">
+                {record.answered} answered · {Math.round(record.accuracy * 100)}% correct
+              </p>
+
+              {weak.length > 0 ? (
+                <ul className="mt-3 grid gap-2">
+                  {weak.map((c) => (
+                    <li key={`${c.subject}|${c.chapter}`} className="grid gap-1">
+                      <div className="flex items-baseline gap-2 text-[13px]">
+                        <span className="min-w-0 flex-1 truncate text-soft">{c.chapter}</span>
+                        <span className="text-[12px] tabular-nums text-faint">
+                          {c.missed} missed of {c.asked}
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/10" role="presentation">
+                        <div className="h-full rounded-full bg-leaf" style={{ width: `${Math.round(c.accuracy * 100)}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-[12.5px] text-faint">
+                  {chapters.length
+                    ? 'Nothing missed yet. A chapter appears here as soon as you miss a question in it.'
+                    : 'Answer a few questions and your weakest chapters will show up here.'}
+                </p>
+              )}
+            </div>
+          )}
 
           <Button variant="paper" size="lg" className="mt-6" iconRight={<ArrowRight className="size-4" />} onClick={start} disabled={!pool.length}>
             Start practice
@@ -173,6 +262,21 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
             <Button variant="paper" size="lg" disabled={choice === null} onClick={() => {
               setChecked(true)
               setAnswers((a) => [...a, choice ?? -1])
+              if (examSlug) {
+                const attempt: Attempt = {
+                  id: newId(),
+                  exam: examSlug,
+                  key: questionKey(q),
+                  subject: q.subject,
+                  chapter: q.topic,
+                  correct: choice === q.answer,
+                  at: new Date().toISOString(),
+                  prompt: q.prompt,
+                }
+                void saveAttempt(attempt)
+                  .then(() => setAttempts((a) => [...a, attempt]))
+                  .catch(() => {})
+              }
             }}>
               Check answer
             </Button>
@@ -212,6 +316,9 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button variant="glass" icon={<RotateCcw className="size-4" />} onClick={start}>
             Try again
+          </Button>
+          <Button variant="glass" onClick={() => setPhase('setup')}>
+            Back to setup
           </Button>
           <Button variant="paper" onClick={onBrowse}>
             Back to the bank

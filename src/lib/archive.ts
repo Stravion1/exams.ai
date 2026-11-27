@@ -69,10 +69,11 @@ export function whySourceLabel(q: BankQuestion): string {
 }
 
 const DB_NAME = 'examsai'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const PAPERS = 'papers'
 const QUESTIONS = 'questions'
 const TEXT = 'text'
+const ATTEMPTS = 'attempts'
 
 let dbp: Promise<IDBDatabase> | null = null
 
@@ -89,6 +90,12 @@ function open(): Promise<IDBDatabase> {
         s.createIndex('paperId', 'paperId')
       }
       if (!db.objectStoreNames.contains(TEXT)) db.createObjectStore(TEXT, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(ATTEMPTS)) {
+        const s = db.createObjectStore(ATTEMPTS, { keyPath: 'id' })
+        s.createIndex('exam', 'exam')
+        s.createIndex('key', 'key')
+        s.createIndex('at', 'at')
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('IndexedDB unavailable'))
@@ -190,6 +197,122 @@ export async function deletePaper(id: string): Promise<void> {
 export async function deleteExam(exam: string): Promise<void> {
   const papers = await listPapers(exam)
   for (const p of papers) await deletePaper(p.id)
+}
+
+/* ------------------------------------------------------------------ */
+/* Attempts: one row per answer given in practice, kept between visits. */
+/* ------------------------------------------------------------------ */
+
+export type Attempt = {
+  id: string
+  exam: string
+  /** promptHash plus the answer index, so a record survives a rebuilt bank. */
+  key: string
+  subject: string
+  chapter: string
+  correct: boolean
+  at: string
+  /** What was asked, so the record still reads if the bank changes. */
+  prompt: string
+}
+
+/** The identity two copies of the same question share. */
+export function questionKey(q: { prompt: string; answer: number }) {
+  return `${promptHash(q.prompt)}:${q.answer}`
+}
+
+export async function saveAttempt(attempt: Attempt): Promise<void> {
+  await tx([ATTEMPTS], 'readwrite', (t) => {
+    t.objectStore(ATTEMPTS).put(attempt)
+  })
+}
+
+/** Oldest first, so "wrong since I last got it right" reads correctly. */
+export async function listAttempts(exam: string): Promise<Attempt[]> {
+  return tx([ATTEMPTS], 'readonly', async (t) => {
+    const rows = await done(t.objectStore(ATTEMPTS).getAll() as IDBRequest<Attempt[]>)
+    return rows.filter((a) => a.exam === exam).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  })
+}
+
+export async function clearAttempts(exam: string): Promise<void> {
+  await tx([ATTEMPTS], 'readwrite', (t) => {
+    const store = t.objectStore(ATTEMPTS)
+    const req = store.getAll() as IDBRequest<Attempt[]>
+    req.onsuccess = () => {
+      for (const a of req.result) if (a.exam === exam) store.delete(a.id)
+    }
+  })
+}
+
+export type ChapterMastery = {
+  chapter: string
+  subject: string
+  asked: number
+  correct: number
+  missed: number
+  /** 0 to 1. */
+  accuracy: number
+  lastAt: string
+}
+
+/** Per-chapter record, weakest first. */
+export function masteryByChapter(attempts: Attempt[]): ChapterMastery[] {
+  const byChapter = new Map<string, ChapterMastery>()
+  for (const a of attempts) {
+    const chapter = a.chapter || 'Chapter not named in the paper'
+    const key = `${a.subject}|${chapter}`
+    let row = byChapter.get(key)
+    if (!row) {
+      row = { chapter, subject: a.subject, asked: 0, correct: 0, missed: 0, accuracy: 0, lastAt: a.at }
+      byChapter.set(key, row)
+    }
+    row.asked++
+    if (a.correct) row.correct++
+    else row.missed++
+    if (a.at > row.lastAt) row.lastAt = a.at
+  }
+  const rows = [...byChapter.values()]
+  for (const r of rows) r.accuracy = r.asked ? r.correct / r.asked : 0
+  return rows.sort((a, b) => a.accuracy - b.accuracy || b.asked - a.asked)
+}
+
+/**
+ * Chapters worth revising, weakest first. One honest miss is enough to list a
+ * chapter: the counts beside it say how much evidence there is.
+ */
+export function weakChapters(attempts: Attempt[], minAsked = 1, limit = 6): ChapterMastery[] {
+  return masteryByChapter(attempts)
+    .filter((c) => c.missed > 0 && c.asked >= minAsked)
+    .slice(0, limit)
+}
+
+/**
+ * Questions to bring back: answered wrong and not answered right since.
+ * Returns how many times each was missed.
+ */
+export function dueKeys(attempts: Attempt[]): Map<string, number> {
+  const state = new Map<string, { misses: number; fixed: boolean }>()
+  for (const a of attempts) {
+    const cur = state.get(a.key) ?? { misses: 0, fixed: false }
+    if (a.correct) {
+      cur.misses = 0
+      cur.fixed = true
+    } else {
+      cur.misses += 1
+      cur.fixed = false
+    }
+    state.set(a.key, cur)
+  }
+  const due = new Map<string, number>()
+  for (const [key, value] of state) if (!value.fixed && value.misses > 0) due.set(key, value.misses)
+  return due
+}
+
+export function attemptStats(attempts: Attempt[]) {
+  let correct = 0
+  for (const a of attempts) if (a.correct) correct++
+  return { answered: attempts.length, correct, accuracy: attempts.length ? correct / attempts.length : 0 }
 }
 
 /* ------------------------------------------------------------------ */

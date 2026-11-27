@@ -1,12 +1,16 @@
 // Checks for the question-bank matching rules in src/lib/archive.ts.
 // Run with `bun run test`.
 import {
+  attemptStats,
   chunkText,
+  dueKeys,
   isNegative,
+  masteryByChapter,
   normalisePrompt,
   promptHash,
   rankBank,
   similarity,
+  weakChapters,
   yearFromName,
 } from '../src/lib/archive.ts'
 
@@ -84,6 +88,41 @@ ok('bank groups 4 questions into 3', mixed.length === 3, String(mixed.length))
 ok('repeat is detected across years', mixed[0].repeats === 2, JSON.stringify(mixed.map((r) => [r.question.prompt, r.repeats])))
 ok('repeat lists both papers', mixed[0].papers.length === 2)
 ok('repeats rank first', mixed[0].question.prompt.includes('SI unit of force'), mixed[0].question.prompt)
+
+console.log('practice record')
+const attempt = (key, correct, day, chapter = 'Laws of Motion', subject = 'Physics') => ({
+  id: `a${key}-${day}`,
+  exam: 'neet-ug',
+  key,
+  subject,
+  chapter,
+  correct,
+  at: new Date(Date.UTC(2026, 0, day)).toISOString(),
+  prompt: 'placeholder',
+})
+const history = [
+  attempt('k1', false, 1),
+  attempt('k1', true, 2),
+  attempt('k2', false, 3),
+  attempt('k2', false, 4),
+  attempt('k3', true, 5),
+]
+ok('counts every answer', attemptStats(history).answered === 5, String(attemptStats(history).answered))
+ok('accuracy is correct over answered', Math.round(attemptStats(history).accuracy * 100) === 40)
+
+const stillDue = dueKeys(history)
+ok('a question answered right since is not due', !stillDue.has('k1'))
+ok('a question still missed is due', stillDue.get('k2') === 2, String(stillDue.get('k2')))
+
+const mastery = masteryByChapter(history)
+ok('one chapter row', mastery.length === 1, String(mastery.length))
+ok('chapter accuracy', Math.round(mastery[0].accuracy * 100) === 40)
+ok('chapter counts misses', mastery[0].missed === 3, String(mastery[0].missed))
+ok('weak chapter is listed', weakChapters(history, 3).length === 1)
+ok('weak list honours the minimum', weakChapters(history, 6).length === 0)
+
+const split = [attempt('a', false, 6, 'Waves'), attempt('b', false, 7, 'Waves'), attempt('c', true, 8, 'Optics'), attempt('d', false, 9, 'Optics')]
+ok('chapters are ranked weakest first', masteryByChapter(split)[0].chapter === 'Waves', masteryByChapter(split)[0].chapter)
 
 console.log('chunking')
 const chunks = chunkText('A'.repeat(30_000), 12_000, 30)
