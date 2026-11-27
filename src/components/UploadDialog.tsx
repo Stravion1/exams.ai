@@ -25,9 +25,9 @@ const STEPS = ['Reading pages', 'Finding the key ideas', 'Writing flashcards and
 type State = { phase: 'idle' } | { phase: 'working'; name: string; step: number } | { phase: 'error'; message: string } | { phase: 'done'; doc: Doc }
 
 /**
- * Upload a file (or a sample). The Worker validates the name and size and
- * returns a study pack; the document then joins the library in localStorage.
- * Nothing is sent but the file's name and size.
+ * Upload a file (or a sample). The Worker validates the name and size, then
+ * either has the model write a study pack or hands back a hand-written one.
+ * The document joins the library in localStorage.
  */
 export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [state, setState] = useState<State>({ phase: 'idle' })
@@ -40,12 +40,12 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
     if (open) setState({ phase: 'idle' })
   }, [open])
 
-  async function start(name: string, size: number) {
+  async function start(name: string, size: number, text?: string) {
     const local = validateUpload({ name, size })
     if (local) return setState({ phase: 'error', message: local })
     setState({ phase: 'working', name, step: 0 })
     const tick = reduce ? 80 : 650
-    const request = postJson<{ document: Doc }>('/api/upload', { name, size })
+    const request = postJson<{ document: Doc }>('/api/upload', { name, size, text })
     for (let i = 1; i < STEPS.length; i++) {
       await new Promise((r) => setTimeout(r, tick))
       setState((s) => (s.phase === 'working' ? { ...s, step: i } : s))
@@ -57,11 +57,23 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
     setState({ phase: 'done', doc: res.data.document })
   }
 
+  // Text files are read here so the model can work from their actual content.
+  function pick(f: File) {
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+    if (ext === 'txt' || ext === 'md') {
+      f.text()
+        .then((text) => start(f.name, f.size, text))
+        .catch(() => start(f.name, f.size))
+      return
+    }
+    void start(f.name, f.size)
+  }
+
   function onDrop(e: DragEvent) {
     e.preventDefault()
     setDrag(false)
     const f = e.dataTransfer.files?.[0]
-    if (f) void start(f.name, f.size)
+    if (f) pick(f)
   }
 
   const go = (path: string) => {
@@ -107,7 +119,7 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
               <CloudUpload aria-hidden className="size-6" />
             </span>
             <span className="text-[16px] font-medium">Drop a file here, or choose one</span>
-            <span className="text-[13.5px] text-muted">Only the file name and size leave your browser in this demo.</span>
+            <span className="text-[13.5px] text-muted">Your file stays on your device. Only its name and size are sent (plus the text of a .txt or .md file).</span>
             <input
               ref={input}
               type="file"
@@ -115,7 +127,7 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
               accept={ACCEPTED.map((e) => '.' + e).join(',')}
               onChange={(e) => {
                 const f = e.target.files?.[0]
-                if (f) void start(f.name, f.size)
+                if (f) pick(f)
                 e.target.value = ''
               }}
             />
@@ -152,6 +164,7 @@ function DonePanel({ doc, go }: { doc: Doc; go: (p: string) => void }) {
         <div className="min-w-0">
           <p className="truncate text-[15px] font-medium">{doc.name}</p>
           <p className="mt-0.5 text-[13.5px] text-muted">
+            {doc.pack ? 'Built by the model. ' : ''}
             Read as {pack.subject}: {pack.title}. {pack.cards.length} flashcards and {pack.quiz.length} quiz questions.
           </p>
         </div>

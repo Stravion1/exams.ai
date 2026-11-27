@@ -15,7 +15,8 @@ export type Pack = {
   id: string
   subject: string
   title: string
-  pages: number
+  /** Only known for the hand-written packs; a model-built pack has no page count. */
+  pages?: number
   summary: string
   keyPoints: string[]
   suggestions: string[]

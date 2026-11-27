@@ -1,0 +1,13 @@
+# Copy to .dev.vars for local development (never commit .dev.vars), then:
+#   AI_API_KEY=your-key        # required: turns the live tutor on
+#   AI_MODEL=glm-4.6           # optional: any model the endpoint serves
+#   AI_BASE_URL=https://api.z.ai/api/paas/v4   # optional: any OpenAI-compatible endpoint
+#
+# Z.ai keys: https://z.ai  (Settings -> API keys)
+# Other providers: swap AI_BASE_URL and AI_MODEL, e.g.
+#   OpenAI      https://api.openai.com/v1              gpt-4o-mini
+#   Groq        https://api.groq.com/openai/v1         llama-3.3-70b-versatile
+#   OpenRouter  https://openrouter.ai/api/v1           anthropic/claude-3.5-sonnet
+AI_API_KEY=
+AI_MODEL=glm-4.6
+AI_BASE_URL=https://api.z.ai/api/paas/v4

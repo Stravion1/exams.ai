@@ -12,7 +12,7 @@ import { readStore, useStored, writeStore } from './storage'
 */
 
 export type DocKind = 'pdf' | 'doc' | 'png' | 'txt' | 'ppt'
-export type Doc = { id: string; name: string; kind: DocKind; size: number; packId: string; addedAt: string }
+export type Doc = { id: string; name: string; kind: DocKind; size: number; packId: string; addedAt: string; pack?: Pack }
 export type ChatMessage = { id: string; from: 'you' | 'cramly'; text: string; cite?: string | null; error?: boolean }
 export type CardState = { box: number; due: number; reviews: number }
 export type Attempt = { docId: string; score: number; total: number; at: string }
@@ -32,7 +32,7 @@ const SEED_ATTEMPTS: Attempt[] = [
 const KEYS = { docs: 'docs', cards: 'cards', attempts: 'attempts', chats: 'chats', user: 'user', days: 'days' }
 
 export function packOf(doc: Doc): Pack {
-  return PACK_BY_ID[doc.packId] ?? PACK_BY_ID['cell-division']
+  return doc.pack ?? PACK_BY_ID[doc.packId] ?? PACK_BY_ID['cell-division']
 }
 
 /** "BIO 201 Cell division.pdf" → "BIO 201 Cell division" */

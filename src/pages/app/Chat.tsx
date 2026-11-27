@@ -22,8 +22,9 @@ type Reply = { text: string; cite: string | null; suggestions: string[] }
 const uid = () => Math.random().toString(36).slice(2, 10)
 
 /**
- * The scripted tutor. Questions go to POST /api/chat, which answers from the
- * document's study pack; the reply is revealed word by word like a stream.
+ * Ask Cramly. Questions go to POST /api/chat, which answers from the document
+ * with the model when AI_API_KEY is set (and from the study pack otherwise);
+ * the reply is revealed word by word like a stream.
  */
 export function ChatPage() {
   const [doc, docs, pick] = useActiveDoc()
@@ -33,6 +34,7 @@ export function ChatPage() {
   const [pending, setPending] = useState(false)
   const [streaming, setStreaming] = useState<{ id: string; shown: string; full: Reply } | null>(null)
   const [suggestions, setSuggestions] = useState<string[] | null>(null)
+  const [ai, setAi] = useState<{ configured: boolean; model: string | null } | null>(null)
   const end = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
   const reduce = useReducedMotion()
@@ -44,6 +46,20 @@ export function ChatPage() {
     setDraft('')
     setError(null)
   }, [doc?.id])
+
+  // Is a model wired up on the Worker? Drives the hint under the composer.
+  useEffect(() => {
+    let live = true
+    fetch('/api/ai/status')
+      .then((r) => (r.ok ? (r.json() as Promise<{ configured?: boolean; model?: string | null }>) : null))
+      .then((d) => {
+        if (live && d) setAi({ configured: !!d.configured, model: d.model ?? null })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end', behavior: reduce ? 'auto' : 'smooth' })
@@ -64,7 +80,15 @@ export function ChatPage() {
     else append({ id: uid(), from: 'you', text: text.trim() })
     setDraft('')
     setPending(true)
-    const res = await postJson<{ reply: Reply }>('/api/chat', { packId: doc.packId, message: text })
+    const res = await postJson<{ reply: Reply }>('/api/chat', {
+      packId: doc.packId,
+      context: { title: pack.title, subject: pack.subject, summary: pack.summary, keyPoints: pack.keyPoints },
+      history: thread
+        .filter((m) => !m.error)
+        .slice(-8)
+        .map((m) => ({ from: m.from, text: m.text })),
+      message: text,
+    })
     await new Promise((r) => setTimeout(r, reduce ? 0 : 500))
     setPending(false)
     if (!res.ok) {
@@ -123,7 +147,7 @@ export function ChatPage() {
         <section aria-label="Conversation" className="flex min-h-0 flex-col">
           <div className="flex-1 overflow-y-auto px-5 py-8 sm:px-8 lg:px-10" aria-live="polite">
             <div className="mx-auto grid max-w-3xl gap-5">
-              <ChatBubble from="cramly" text={`I have read **${docTitle(doc)}** (${pack.pages} pages). Ask me anything about it, or pick a question below.`} />
+              <ChatBubble from="cramly" text={`I have read **${docTitle(doc)}**${pack.pages ? ` (${pack.pages} pages)` : ''}. Ask me anything about it, or pick a question below.`} />
               {thread.map((m) => (
                 <ChatBubble key={m.id} from={m.from} text={m.text} cite={m.error ? null : m.cite} error={m.error} onRetry={m.error && m.cite ? () => void ask(m.cite as string, m.id) : undefined} />
               ))}
@@ -177,7 +201,8 @@ export function ChatPage() {
                 </p>
               ) : (
                 <p id="ask-hint" className="mt-2 text-[12.5px] text-faint">
-                  Enter to send, Shift and Enter for a new line. This demo answers from a script, no model is called.
+                  {ai?.configured ? `Live answers from ${ai.model}. ` : ai ? 'Demo mode: set AI_API_KEY on the Worker for live answers. ' : ''}
+                  Enter to send, Shift and Enter for a new line.
                 </p>
               )}
             </div>
@@ -189,7 +214,7 @@ export function ChatPage() {
             <FileIcon kind={doc.kind} />
             <div className="min-w-0">
               <p className="truncate text-[14.5px] font-medium">{docTitle(doc)}</p>
-              <p className="text-[12.5px] text-muted">{pack.pages} pages</p>
+              <p className="text-[12.5px] text-muted">{pack.pages ? `${pack.pages} pages` : 'Uploaded file'}</p>
             </div>
           </div>
           <Badge className="mt-5">{pack.subject}</Badge>

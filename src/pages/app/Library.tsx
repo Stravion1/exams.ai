@@ -152,7 +152,8 @@ export function LibraryPage() {
                   </div>
                   <h2 className="mt-5 text-[18px] font-medium leading-snug tracking-[-0.02em]">{docTitle(d)}</h2>
                   <p className="mt-1 text-[13.5px] text-muted">
-                    {KIND_LABEL[d.kind]}, {p.pages} pages, {SIZE(d.size)}, added {DATE(d.addedAt)}
+                    {KIND_LABEL[d.kind]}, {p.pages ? `${p.pages} pages, ` : ''}
+                    {SIZE(d.size)}, added {DATE(d.addedAt)}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Badge>{p.subject}</Badge>
