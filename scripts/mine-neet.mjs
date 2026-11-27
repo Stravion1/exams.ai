@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { normalisePrompt, promptHash, rankBank } from '../src/lib/archive.ts'
+import { normalisePrompt, promptHash, rankBank, similarity } from '../src/lib/archive.ts'
 
 const WRITE = process.argv.includes('--write')
 const ROOT = new URL('..', import.meta.url).pathname
@@ -53,12 +53,16 @@ const tidy = (s) =>
  * that is worse than showing nothing, so keep a solution only when it reads.
  */
 function readable(s) {
+  if (s.length < 40) return false
+  // "V V V V" and "MR I MK" are formula fragments, not an explanation.
+  if (/\b[a-z]\b(\s+\b[a-z]\b){2,}/i.test(s)) return false
+  // Keep anything carrying a run of real English words. The working may still
+  // have formulas that did not extract cleanly around it, and the English is
+  // the part that teaches, so a mixed solution beats no solution.
+  if (/[a-z]{3,}(?:\s+[a-z]{3,}){3,}/i.test(s)) return true
   const words = s.split(/\s+/).filter((w) => /[a-z]{3,}/i.test(w))
   const letters = (s.match(/[a-z]/gi) ?? []).length
-  const visible = s.replace(/\s/g, '').length || 1
-  // "V V V V" and "MR I MK" are formula fragments, not an explanation.
-  const glyphSoup = /\b[a-z]\b(\s+\b[a-z]\b){2,}/i.test(s)
-  return words.length >= 5 && letters / visible > 0.55 && !glyphSoup
+  return words.length >= 6 && letters / (s.replace(/\s/g, '').length || 1) > 0.55
 }
 
 function cleanBody(s, cap) {
@@ -333,6 +337,69 @@ for (const c of chapters.slice(0, 12)) console.log(`  ${String(c.questions).padS
 
 /* Repeats by exam year: the same stem printed in more than one NEET sitting. */
 const all = [...bank, ...chapterBank]
+
+/*
+  Explanations come from two places in these PDFs. The four full papers print
+  their working; the chapter sets print only an answer key, but they repeat the
+  full papers' questions for 2022-2025, so those questions can borrow the
+  working from the paper that printed it. Every borrowed one is marked, and the
+  UI names the paper it came from.
+*/
+const flatText = (s) => (s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+const sameOptions = (a, b) => {
+  const A = new Set(a.options.map(flatText))
+  const B = new Set(b.options.map(flatText))
+  let shared = 0
+  for (const x of A) if (x && B.has(x)) shared++
+  return shared >= 3
+}
+
+for (const q of all) if (q.why) q.whySource = 'printed'
+
+const donors = all.filter((q) => q.why)
+const donorIndex = new Map()
+for (let i = 0; i < donors.length; i++) {
+  for (const w of new Set(normalisePrompt(donors[i].prompt).split(' ').filter(Boolean))) {
+    if (w.length < 6) continue
+    const list = donorIndex.get(w)
+    if (list) list.push(i)
+    else donorIndex.set(w, [i])
+  }
+}
+
+let inherited = 0
+for (const q of all) {
+  if (q.why) continue
+  const tokens = new Set(normalisePrompt(q.prompt).split(' ').filter(Boolean))
+  const candidates = new Set()
+  for (const w of tokens) {
+    if (w.length < 6) continue
+    for (const i of donorIndex.get(w) ?? []) candidates.add(i)
+  }
+
+  let best = null
+  let bestSim = 0
+  for (const i of candidates) {
+    const donor = donors[i]
+    if (donor.paperId === q.paperId) continue
+    const sim = similarity(q.prompt, donor.prompt)
+    // Near-identical wording plus three of four options is the same question;
+    // anything looser risks attaching working that does not answer this stem.
+    if (sim < 0.9 || sim <= bestSim || !sameOptions(q, donor)) continue
+    best = donor
+    bestSim = sim
+  }
+
+  if (best) {
+    q.why = best.why
+    q.whySource = 'shared'
+    q.whyFromPaper = best.paperId
+    inherited++
+  }
+}
+
+console.log(`explanations: ${donors.length} printed in the papers, ${inherited} borrowed from the same question in another paper`)
+
 const byKey = new Map()
 for (const q of all) {
   const k = q.key || promptHash(q.prompt)
@@ -386,7 +453,12 @@ if (WRITE) {
   const rows = all.map((q) => {
     const row = [paperIndex.get(q.paperId), q.subject, q.topic, q.prompt, q.options, q.answer]
     // Most questions have no readable solution: leave the slot off entirely.
-    if (q.why) row.push(q.why)
+    if (q.why) {
+      row.push(q.why)
+      // 1 marks working taken from the same question in another paper, so the
+      // UI can say where it came from instead of implying the paper printed it.
+      if (q.whySource === 'shared') row.push(1, paperIndex.get(q.whyFromPaper) ?? 0)
+    }
     return row
   })
 

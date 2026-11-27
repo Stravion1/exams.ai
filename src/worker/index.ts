@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 
 import { PACK_BY_ID, answer, packForFile } from '../shared/packs'
 import { fileKind, validateAnalyze, validateContact, validateEmail, validateLogin, validateQuestion, validateSignup, validateUpload } from '../shared/validate'
-import { AiError, aiConfig, askModel, buildPack, contextOfPack, extractQuestions, probe, readContext, readHistory } from './ai'
+import { AiError, aiConfig, askModel, buildPack, contextOfPack, explainAnswer, extractQuestions, probe, readContext, readHistory } from './ai'
 
 /*
   The Worker in front of the static site. Every form posts here and gets the
@@ -154,6 +154,35 @@ app.post('/api/analyze', async (c) => {
     return c.json({ ok: true, questions })
   } catch (err) {
     return c.json({ error: failed(err, 'That part of the paper could not be read.') }, 502)
+  }
+})
+
+// Explain one bank question that its paper printed no working for.
+app.post('/api/explain', async (c) => {
+  const b = await body<{ prompt: string; options: string[]; answer: number; subject?: string; topic?: string }>(c)
+  if (!b) return c.json(invalidJson, 400)
+
+  const prompt = typeof b.prompt === 'string' ? b.prompt.trim() : ''
+  const options = Array.isArray(b.options) ? b.options.filter((o): o is string => typeof o === 'string').slice(0, 6) : []
+  const answer = Number(b.answer)
+  if (prompt.length < 8 || options.length < 2 || !Number.isInteger(answer) || answer < 0 || answer >= options.length) {
+    return c.json({ error: 'That question is incomplete.' }, 422)
+  }
+
+  const cfg = aiConfig(c.env)
+  if (!cfg) return c.json({ error: 'No model is connected, so this question cannot be explained yet.' }, 503)
+
+  try {
+    const why = await explainAnswer(cfg, {
+      prompt: prompt.slice(0, 600),
+      options: options.map((o) => o.slice(0, 300)),
+      answer,
+      subject: typeof b.subject === 'string' ? b.subject.slice(0, 60) : 'NEET',
+      topic: typeof b.topic === 'string' ? b.topic.slice(0, 120) : '',
+    })
+    return c.json({ ok: true, why })
+  } catch (err) {
+    return c.json({ error: failed(err, 'That explanation could not be written.') }, 502)
   }
 })
 

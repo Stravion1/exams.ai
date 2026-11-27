@@ -8,10 +8,21 @@ import { EmptyState } from '../../components/EmptyState'
 import type { BankRow } from '../../lib/archive'
 import { bankStats } from '../../lib/archive'
 import type { Exam } from '../../lib/exams'
+import { Explanation } from './Explanation'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
 
-export function BankTab({ rows, exam, onPractise }: { rows: BankRow[]; exam: Exam; onPractise: () => void }) {
+export function BankTab({
+  rows,
+  exam,
+  aiReady,
+  onPractise,
+}: {
+  rows: BankRow[]
+  exam: Exam
+  aiReady: boolean
+  onPractise: () => void
+}) {
   const [q, setQ] = useState('')
   const [subject, setSubject] = useState('All')
   const [repeatsOnly, setRepeatsOnly] = useState(false)
@@ -76,7 +87,7 @@ export function BankTab({ rows, exam, onPractise }: { rows: BankRow[]; exam: Exa
 
       <ol className="grid gap-3">
         {shown.map((row, i) => (
-          <BankItem key={row.question.id} row={row} index={i + 1} />
+          <BankItem key={row.question.id} row={row} index={i + 1} aiReady={aiReady} />
         ))}
       </ol>
 
@@ -91,7 +102,7 @@ export function BankTab({ rows, exam, onPractise }: { rows: BankRow[]; exam: Exa
   )
 }
 
-function BankItem({ row, index }: { row: BankRow; index: number }) {
+function BankItem({ row, index, aiReady }: { row: BankRow; index: number; aiReady: boolean }) {
   const q = row.question
   const seen = row.papers.map((p) => p.year ?? p.paperName).join(' · ')
   return (
@@ -132,7 +143,9 @@ function BankItem({ row, index }: { row: BankRow; index: number }) {
             </li>
           ))}
         </ol>
-        {q.why ? <p className="mt-3 text-[13.5px] leading-relaxed text-muted">{q.why}</p> : null}
+        <div className="mt-3">
+          <Explanation question={q} aiReady={aiReady} />
+        </div>
         <p className="mt-2 text-[12px] text-faint">From {q.paperName}</p>
       </details>
     </li>

@@ -7,13 +7,14 @@ import { Notice } from '../../components/Notice'
 import { ProgressBar, ScoreRing } from '../../components/Progress'
 import type { BankRow } from '../../lib/archive'
 import { cx } from '../../lib/cx'
+import { Explanation } from './Explanation'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
 
 type Phase = 'setup' | 'question' | 'done'
 
 /** A practice test built from the mined bank, most repeated questions first. */
-export function PracticeTab({ rows, onBrowse }: { rows: BankRow[]; onBrowse: () => void }) {
+export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiReady: boolean; onBrowse: () => void }) {
   const [count, setCount] = useState(10)
   const [subject, setSubject] = useState('All')
   const [deck, setDeck] = useState<BankRow[]>([])
@@ -159,12 +160,10 @@ export function PracticeTab({ rows, onBrowse }: { rows: BankRow[]; onBrowse: () 
 
           {checked && (
             <Notice tone={right ? 'success' : 'error'} className="mt-5">
-              <strong className="font-semibold">{right ? 'Correct.' : `Not quite: the answer is ${q.options[q.answer]}.`}</strong>{' '}
-              {q.why ? (
-                q.why
-              ) : right ? null : (
-                <span className="text-muted">This paper's printed solution could not be read for this question.</span>
-              )}
+              <strong className="font-semibold">{right ? 'Correct.' : `Not quite: the answer is ${q.options[q.answer]}.`}</strong>
+              <div className="mt-2">
+                <Explanation question={q} aiReady={aiReady} />
+              </div>
             </Notice>
           )}
         </fieldset>
@@ -229,9 +228,11 @@ export function PracticeTab({ rows, onBrowse }: { rows: BankRow[]; onBrowse: () 
               <div className="text-[14px]">
                 <p>{r.question.prompt}</p>
                 <p className="mt-1 text-muted">
-                  {ok ? r.question.options[r.question.answer] : `You said ${r.question.options[answers[n]] ?? 'nothing'}; answer: ${r.question.options[r.question.answer]}.`}{' '}
-                  {r.question.why}
+                  {ok ? r.question.options[r.question.answer] : `You said ${r.question.options[answers[n]] ?? 'nothing'}; answer: ${r.question.options[r.question.answer]}.`}
                 </p>
+                <div className="mt-1.5">
+                  <Explanation question={r.question} aiReady={aiReady} />
+                </div>
               </div>
             </li>
           )

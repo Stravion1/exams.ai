@@ -282,6 +282,40 @@ export async function buildPack(cfg: AiConfig, seed: PackSeed): Promise<Pack> {
   }
 }
 
+const SYSTEM_EXPLAIN = `You explain the answer to one multiple-choice question from NEET, the Indian medical entrance exam.
+
+Rules:
+- Say why the marked option is correct, in two or three sentences a seventeen-year-old can follow.
+- Where it helps, name the wrong option students most often pick and why it tempts them.
+- Use only the question, its options and the marked answer. Never invent a fact, a number or a different answer. If the question is unreadable or genuinely ambiguous, say so in one sentence and stop.
+- No preamble, no restating the question, no headings, no lists.
+
+Reply with one JSON object and nothing else: {"why": string}`
+
+/** Write an explanation for one question, given its printed answer. */
+export async function explainAnswer(
+  cfg: AiConfig,
+  q: { prompt: string; options: string[]; answer: number; subject: string; topic: string },
+): Promise<string> {
+  const options = q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join('\n')
+  const raw = await complete(
+    cfg,
+    [
+      { role: 'system', content: SYSTEM_EXPLAIN },
+      {
+        role: 'user',
+        content: `Subject: ${q.subject}${q.topic ? ` (${q.topic})` : ''}\nQuestion: ${q.prompt}\nOptions:\n${options}\nMarked correct by the paper: ${String.fromCharCode(65 + q.answer)}. ${q.options[q.answer]}`,
+      },
+    ],
+    500,
+    30_000,
+  )
+  const o = readJson(raw)
+  const why = clip(o?.why, 900) || clip(raw, 900)
+  if (!why) throw new AiError('The model returned no explanation. Try again.')
+  return why
+}
+
 /** A cheap reachability check for GET /api/ai/status?probe=1. */
 export async function probe(cfg: AiConfig): Promise<void> {
   await complete(cfg, [{ role: 'user', content: 'Reply with the single word: ok' }], 8, 12_000)

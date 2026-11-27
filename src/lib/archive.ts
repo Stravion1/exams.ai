@@ -42,6 +42,30 @@ export type BankQuestion = {
   why: string
   /** Normalised prompt, the key repeated questions share. */
   key: string
+  /**
+   * Where the explanation came from: printed in that paper, borrowed from the
+   * same question printed in another paper, or written by a model.
+   */
+  whySource?: 'printed' | 'shared' | 'ai'
+  /** The paper whose printed working was borrowed, when whySource is 'shared'. */
+  whyFrom?: string
+}
+
+/** A paper name short enough for a caption. */
+export function shortPaper(name: string) {
+  // Source file names are long and noisy; the year is what identifies a paper.
+  const year = name.match(/\b(20\d{2})\b/)?.[1]
+  if (/neet/i.test(name) && year) return `the NEET ${year} paper`
+  const clean = name.replace(/\.pdf$/i, '').replace(/[_|]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return clean.length > 46 ? `${clean.slice(0, 46).trimEnd()}…` : clean
+}
+
+/** One line saying where this question's explanation came from. */
+export function whySourceLabel(q: BankQuestion): string {
+  if (!q.why) return 'No working is printed for this question — the paper gives only the answer key.'
+  if (q.whySource === 'ai') return 'Written by a model, not taken from the paper. Check it against your textbook.'
+  if (q.whySource === 'shared') return `Working printed in ${shortPaper(q.whyFrom ?? 'another paper')}, where the same question appeared.`
+  return `Working printed in ${shortPaper(q.paperName)}.`
 }
 
 const DB_NAME = 'examsai'

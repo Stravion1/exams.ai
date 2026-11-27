@@ -46,7 +46,7 @@ type BundledRow = Omit<BankQuestion, 'id' | 'exam' | 'key'>
 type CompactBank = {
   v: number
   papers: [string, number | null, string][]
-  rows: [number, string, string, string, string[], number, string?][]
+  rows: [number, string, string, string, string[], number, string?, number?, number?][]
 }
 
 /*
@@ -76,9 +76,22 @@ async function loadBundledBank(): Promise<BundledRow[]> {
     bank = (await plain.json()) as CompactBank
   }
 
-  return bank.rows.map(([paper, subject, topic, prompt, options, answer, why]) => {
+  return bank.rows.map(([paper, subject, topic, prompt, options, answer, why, shared, from]) => {
     const [paperId, year, paperName] = bank!.papers[paper] ?? ['', null, '']
-    return { paperId, paperName, year, subject, topic, prompt, options, answer, why: why ?? '' }
+    return {
+      paperId,
+      paperName,
+      year,
+      subject,
+      topic,
+      prompt,
+      options,
+      answer,
+      why: why ?? '',
+      // 1 means the working was borrowed from the same question in another paper.
+      whySource: why ? (shared === 1 ? ('shared' as const) : ('printed' as const)) : undefined,
+      whyFrom: shared === 1 && typeof from === 'number' ? bank!.papers[from]?.[2] : undefined,
+    }
   })
 }
 
@@ -410,8 +423,8 @@ export function ExamSpace({ slug }: { slug: string }) {
             onClear={clearExam}
           />
         )}
-        {tab === 'bank' && <BankTab rows={rows} exam={exam} onPractise={() => setTab('practice')} />}
-        {tab === 'practice' && <PracticeTab rows={rows} onBrowse={() => setTab('bank')} />}
+        {tab === 'bank' && <BankTab rows={rows} exam={exam} aiReady={aiReady === true} onPractise={() => setTab('practice')} />}
+        {tab === 'practice' && <PracticeTab rows={rows} aiReady={aiReady === true} onBrowse={() => setTab('bank')} />}
         {tab === 'ask' && <AskTab exam={exam} rows={rows} />}
       </div>
     </div>
