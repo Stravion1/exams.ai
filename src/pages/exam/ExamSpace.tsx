@@ -42,8 +42,8 @@ type Mined = { subject: string; topic: string; prompt: string; options: string[]
 /** A row of the pre-mined archive that ships with the build (public/data). */
 type BundledRow = Omit<BankQuestion, 'id' | 'exam' | 'key'>
 
-/** One chapter's share of the past papers, newest-first chapters ranked by it. */
-type TopicRow = { topic: string; questions: number; first: number; latest: number }
+/** One chapter's share of the past papers, with how many sittings it appeared in. */
+type TopicRow = { topic: string; questions: number; years: number; first: number; latest: number }
 
 /**
  * One exam's workspace: upload past papers, mine them into a question bank,
@@ -56,7 +56,18 @@ export function ExamSpace({ slug }: { slug: string }) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [questions, setQuestions] = useState<BankQuestion[]>([])
   const [bundled, setBundled] = useState<BankQuestion[]>([])
-  const [topicCounts, setTopicCounts] = useState<ReadonlyMap<string, number>>(new Map())
+  const [topics, setTopics] = useState<TopicRow[]>([])
+  const topicCounts = useMemo(() => new Map(topics.map((t) => [t.topic, t.questions])), [topics])
+  /*
+    Questions repeat almost never in NEET, chapters repeat constantly. A chapter
+    is "in every sitting" when it appears in as many sittings as the best-covered
+    chapter in the bank does, which is every sitting the papers cover.
+  */
+  const everySitting = useMemo(() => {
+    if (!topics.length) return 0
+    const most = Math.max(...topics.map((t) => t.years))
+    return topics.filter((t) => t.years === most).length
+  }, [topics])
   const [jobs, setJobs] = useState<Record<string, Job>>({})
   const [busy, setBusy] = useState(false)
   const [aiReady, setAiReady] = useState<boolean | null>(null)
@@ -96,9 +107,9 @@ export function ExamSpace({ slug }: { slug: string }) {
       fetch('/data/neet-bank.json').then((r) => (r.ok ? (r.json() as Promise<BundledRow[]>) : [])),
       fetch('/data/neet-topics.json').then((r) => (r.ok ? (r.json() as Promise<TopicRow[]>) : [])),
     ])
-      .then(([data, topics]) => {
+      .then(([data, topicRows]) => {
         if (!live) return
-        if (Array.isArray(topics) && topics.length) setTopicCounts(new Map(topics.map((t) => [t.topic, t.questions])))
+        if (Array.isArray(topicRows) && topicRows.length) setTopics(topicRows)
         if (!Array.isArray(data) || !data.length) return
         setBundled(
           data.map((q, i) => ({
@@ -301,10 +312,17 @@ export function ExamSpace({ slug }: { slug: string }) {
 
           <dl className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Papers" value={papers.length} />
-            <Stat label="Questions mined" value={stats.total} />
-            <Stat label="Repeated questions" value={stats.repeats} accent />
+            <Stat label="Distinct questions" value={stats.total} />
+            <Stat label="Chapters in every sitting" value={everySitting} accent />
             <Stat label="Subjects" value={stats.subjects.length} />
           </dl>
+
+          {everySitting > 0 && (
+            <p className="mt-3 text-[12.5px] text-faint">
+              {everySitting} of the {topics.length} chapters appear in every NEET sitting the papers here cover, 2016 to 2026. Questions do not
+              repeat word for word, so those chapters lead the ranking instead.
+            </p>
+          )}
 
           <div className="mt-7">
             <Segmented

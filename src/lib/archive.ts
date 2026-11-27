@@ -292,8 +292,30 @@ export function rankBank(
   /** How many past papers each chapter contributed, used to weigh priority. */
   topicCounts?: ReadonlyMap<string, number>,
 ): BankRow[] {
-  const groups: { key: string; items: BankQuestion[] }[] = []
+  const groups: { key: string; items: BankQuestion[]; tokens: Set<string> }[] = []
   const exact = new Map<string, number>()
+
+  // Tokenising is the expensive part of every comparison, so each stem is
+  // tokenised once instead of once per candidate group.
+  const memo = new Map<string, Set<string>>()
+  const tok = (s: string) => {
+    let t = memo.get(s)
+    if (!t) {
+      t = tokens(s)
+      memo.set(s, t)
+    }
+    return t
+  }
+  const sharedOf = (a: Set<string>, b: Set<string>) => {
+    let n = 0
+    for (const w of a) if (b.has(w)) n++
+    return n
+  }
+  const simOf = (a: Set<string>, b: Set<string>) => {
+    if (!a.size || !b.size) return 0
+    const shared = sharedOf(a, b)
+    return shared / (a.size + b.size - shared)
+  }
 
   /*
     A stem does not identify a question on its own: papers reuse generic ones
@@ -308,11 +330,27 @@ export function rankBank(
     const A = flat(a)
     const B = flat(b)
     if (!A || !B) return false
-    return A === B || similarity(a, b) >= 0.5
+    return A === B || simOf(tok(a), tok(b)) >= 0.5
   }
   const identity = (q: BankQuestion) => `${promptHash(q.prompt)}|${flat(answerOf(q))}`
   // A chapter that keeps coming back is the strongest signal after a repeat.
   const topicWeight = (topic: string) => Math.min(6, Math.round((topicCounts?.get(topic) ?? 0) / 15))
+
+  /*
+    Comparing every question against every group is O(n squared) over string
+    tokenisation, which froze the NEET workspace for seconds at 2,375 questions.
+    Index the long words instead and only compare against groups that share the
+    rarest one: a reworded duplicate always shares it.
+  */
+  const index = new Map<string, number[]>()
+  const indexGroup = (gid: number) => {
+    for (const w of groups[gid].tokens) {
+      if (w.length < 6) continue
+      const list = index.get(w)
+      if (!list) index.set(w, [gid])
+      else if (list[list.length - 1] !== gid) list.push(gid)
+    }
+  }
 
   for (const q of questions) {
     // Recompute rather than trusting `key`: rows mined before the matching rules
@@ -323,27 +361,39 @@ export function rankBank(
       groups[hit].items.push(q)
       continue
     }
+    const qt = tok(q.prompt)
+    let candidates: number[] = []
+    for (const w of qt) {
+      if (w.length < 6) continue
+      const list = index.get(w)
+      if (list && (!candidates.length || list.length < candidates.length)) candidates = list
+    }
+
     // Near-duplicates must share at least two content words, so two short
     // questions that only share one word are not merged by accident.
-    const near = groups.findIndex((g) => {
+    let near = -1
+    for (const gid of candidates) {
+      const g = groups[gid]
       const first = g.items[0]
-      if (sharedWords(first.prompt, q.prompt) < 2) return false
-      const sim = similarity(first.prompt, q.prompt)
-      if (sim < threshold) return false
+      if (sharedOf(g.tokens, qt) < 2) continue
+      if (simOf(g.tokens, qt) < threshold) continue
       // A stem repeating inside one paper is an extraction duplicate, not a
       // question that came back in a later year.
-      if (g.items.some((x) => x.paperId === q.paperId)) return false
+      if (g.items.some((x) => x.paperId === q.paperId)) continue
       // Near-identical wording still proves nothing on its own: the generic
       // stems above recur word for word, so the correct option must agree too.
-      return sameAnswer(answerOf(first), answerOf(q))
-    })
+      if (!sameAnswer(answerOf(first), answerOf(q))) continue
+      near = gid
+      break
+    }
     if (near !== -1) {
       groups[near].items.push(q)
       exact.set(key, near)
       continue
     }
     exact.set(key, groups.length)
-    groups.push({ key, items: [q] })
+    groups.push({ key, items: [q], tokens: qt })
+    indexGroup(groups.length - 1)
   }
 
   const rows: BankRow[] = groups.map((g) => {

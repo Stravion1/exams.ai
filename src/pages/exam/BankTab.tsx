@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ListChecks, Repeat2, Search } from 'lucide-react'
 
 import { Badge } from '../../components/Badge'
@@ -15,6 +15,11 @@ export function BankTab({ rows, exam, onPractise }: { rows: BankRow[]; exam: Exa
   const [q, setQ] = useState('')
   const [subject, setSubject] = useState('All')
   const [repeatsOnly, setRepeatsOnly] = useState(false)
+  /*
+    The NEET bank runs to thousands of questions, and rendering every row with
+    its options froze the page for seconds. Show a page of them at a time.
+  */
+  const [visible, setVisible] = useState(50)
   const stats = useMemo(() => bankStats(rows), [rows])
 
   const filtered = useMemo(() => {
@@ -26,6 +31,9 @@ export function BankTab({ rows, exam, onPractise }: { rows: BankRow[]; exam: Exa
       return r.question.prompt.toLowerCase().includes(needle) || r.question.topic.toLowerCase().includes(needle)
     })
   }, [rows, q, subject, repeatsOnly])
+
+  useEffect(() => setVisible(50), [q, subject, repeatsOnly])
+  const shown = filtered.slice(0, visible)
 
   if (!rows.length) {
     return (
@@ -67,10 +75,18 @@ export function BankTab({ rows, exam, onPractise }: { rows: BankRow[]; exam: Exa
       </p>
 
       <ol className="grid gap-3">
-        {filtered.map((row, i) => (
+        {shown.map((row, i) => (
           <BankItem key={row.question.id} row={row} index={i + 1} />
         ))}
       </ol>
+
+      {filtered.length > visible && (
+        <div className="flex justify-center">
+          <Button variant="glass" onClick={() => setVisible((v) => v + 50)}>
+            Show 50 more ({filtered.length - visible} left)
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
