@@ -101,7 +101,7 @@ export function Styleguide() {
   return (
     <Container className="py-16">
       <Eyebrow>Design system</Eyebrow>
-      <h1 className="mt-4 text-[clamp(40px,5vw,64px)] font-normal tracking-[-0.05em]">Cramly style guide</h1>
+      <h1 className="mt-4 text-[clamp(40px,5vw,64px)] font-normal tracking-[-0.05em]">exams.ai style guide</h1>
       <p className="mt-4 max-w-2xl text-[17px] text-muted">Every token and component, rendered by the real code. Tokens live in src/styles.css; components in src/components.</p>
       <nav aria-label="Sections" className="mt-8 flex flex-wrap gap-2">
         {['colour', 'type', 'space', 'radii', 'shadow', 'motion', 'buttons', 'fields', 'feedback', 'content'].map((s) => (

@@ -1,4 +1,5 @@
 import { Cta } from '../sections/Cta'
+import { ExamStrip } from '../sections/ExamStrip'
 import { Faq } from '../sections/Faq'
 import { Features } from '../sections/Features'
 import { Hero } from '../sections/Hero'
@@ -11,6 +12,7 @@ export function Home() {
   return (
     <>
       <Hero />
+      <ExamStrip />
       <Features />
       <HowItWorks />
       <Stats />

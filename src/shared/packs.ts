@@ -1,5 +1,5 @@
 /*
-  Study packs: what Cramly "extracts" from a file. The browser and the Worker
+  Study packs: what exams.ai "extracts" from a file. The browser and the Worker
   both import this module. A real product would build a pack from the
   uploaded file with a model; here every upload is matched to one of these
   hand-written packs (see `packForFile`), so the demo works offline and costs

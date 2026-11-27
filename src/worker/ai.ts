@@ -87,7 +87,7 @@ Key points:
 ${points}`
 }
 
-const SYSTEM_TUTOR = `You are Cramly, a patient study tutor for a student revising from one document.
+const SYSTEM_TUTOR = `You are exams.ai, a patient study tutor for a student revising from one document.
 
 Rules:
 - Answer only from the document notes you are given. If they do not cover the question, say so in one sentence and suggest a better thing to ask.
@@ -253,4 +253,66 @@ export async function buildPack(cfg: AiConfig, seed: PackSeed): Promise<Pack> {
 /** A cheap reachability check for GET /api/ai/status?probe=1. */
 export async function probe(cfg: AiConfig): Promise<void> {
   await complete(cfg, [{ role: 'user', content: 'Reply with the single word: ok' }], 8, 12_000)
+}
+
+/* ------------------------------------------------------------------ */
+/* Question mining: turn a past paper into a question bank.            */
+/* ------------------------------------------------------------------ */
+
+export type ExtractedQuestion = {
+  subject: string
+  topic: string
+  prompt: string
+  options: string[]
+  answer: number
+  why: string
+}
+
+const SYSTEM_EXTRACT = `You read one excerpt of an Indian competitive exam paper that includes its answer key and solutions, and you turn it into structured practice questions.
+
+Rules:
+- Only include questions actually printed in this excerpt. Never invent a question, an option or an answer.
+- Copy the question text as printed, fixing only spacing from PDF extraction.
+- Keep the options the paper gives, usually four. Drop "All of these" style options only when the paper does not have them.
+- "answer" is the zero-based index of the correct option, taken from the answer key or the printed solution. If the excerpt does not make the correct option clear, leave that question out entirely.
+- "why" is one or two sentences on why that option is correct, taken from or summarising the given solution.
+- "subject" must be one of the subjects you are told. "topic" is a short chapter name such as "Laws of Motion" or "Human Physiology".
+- Skip instructions, headers, page numbers, marks and question numbers with no text.
+
+Reply with one JSON object and nothing else, using exactly this key:
+{"questions":[{"subject": string, "topic": string, "prompt": string, "options": string[], "answer": number, "why": string}]}
+Return {"questions":[]} when the excerpt holds no complete question.`
+
+/** Mine every complete MCQ out of one chunk of a paper. */
+export async function extractQuestions(cfg: AiConfig, input: { exam: string; paper: string; text: string }): Promise<ExtractedQuestion[]> {
+  const raw = await complete(
+    cfg,
+    [
+      { role: 'system', content: SYSTEM_EXTRACT },
+      { role: 'user', content: `Exam: ${input.exam}\nPaper: ${input.paper}\n\nExcerpt:\n${input.text}` },
+    ],
+    4000,
+    90_000,
+  )
+
+  const o = readJson(raw)
+  const list = Array.isArray(o?.questions) ? o.questions : []
+  const out: ExtractedQuestion[] = []
+  for (const item of list) {
+    const r = (item ?? {}) as Record<string, unknown>
+    const prompt = clip(r.prompt, 600)
+    const options = asStrings(r.options, 6, 300)
+    const answer = Number(r.answer)
+    if (prompt.length < 8 || options.length < 2) continue
+    if (!Number.isInteger(answer) || answer < 0 || answer >= options.length) continue
+    out.push({
+      subject: clip(r.subject, 60) || 'General',
+      topic: clip(r.topic, 120),
+      prompt,
+      options,
+      answer,
+      why: clip(r.why, 600),
+    })
+  }
+  return out
 }

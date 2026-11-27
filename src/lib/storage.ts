@@ -7,8 +7,8 @@ import { useCallback, useEffect, useState } from 'react'
   still works when storage is unavailable; every hook reading a key re-renders
   when any component writes it.
 */
-const NS = 'cramly:'
-const EVENT = 'cramly:store'
+const NS = 'examsai:'
+const EVENT = 'examsai:store'
 const mem = new Map<string, unknown>()
 
 export function readStore<T>(key: string, fallback: T): T {

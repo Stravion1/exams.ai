@@ -12,7 +12,7 @@ export function NoDocs({ what }: { what: string }) {
       <EmptyState
         icon={<FileUp className="size-6" />}
         title="Your library is empty"
-        body={`Upload a file and Cramly will build ${what} from it in about ten seconds.`}
+        body={`Upload a file and exams.ai will build ${what} from it in about ten seconds.`}
         action={
           <Button variant="paper" onClick={() => setOpen(true)}>
             Upload a file

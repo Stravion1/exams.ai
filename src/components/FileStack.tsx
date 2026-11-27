@@ -15,13 +15,13 @@ const POS = [
 
 /**
  * The fanned file cards in the hero. Each card is a tab: choosing a card
- * brings it to the front and shows what Cramly does with that file type.
+ * brings it to the front and shows what exams.ai does with that file type.
  */
 export function FileStack({ className }: { className?: string }) {
   const [order, setOrder] = useState<Kind[]>(['pdf', 'doc', 'png'])
   const files = Object.fromEntries(HERO.files.map((f) => [f.kind, f])) as Record<Kind, (typeof HERO.files)[number]>
   return (
-    <div role="tablist" aria-label="File types Cramly reads" className={cx('relative h-[300px] w-[300px]', className)}>
+    <div role="tablist" aria-label="File types exams.ai reads" className={cx('relative h-[300px] w-[300px]', className)}>
       {HERO.files.map((f) => {
         const depth = order.indexOf(f.kind)
         const p = POS[depth]

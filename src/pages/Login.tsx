@@ -43,7 +43,7 @@ export function Login() {
       lede={AUTH.loginLede}
       footer={
         <>
-          New to Cramly?{' '}
+          New to exams.ai?{' '}
           <Link href="/signup" className="inline-flex min-h-10 items-center text-leaf-text underline underline-offset-4">
             Create an account
           </Link>

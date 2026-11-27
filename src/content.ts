@@ -4,7 +4,7 @@
 */
 
 export const BRAND = {
-  name: 'Cramly',
+  name: 'exams.ai',
   tagline: 'AI study assistant',
   email: 'hello@cramly.app',
 }
@@ -20,6 +20,7 @@ export const IMAGES = {
 }
 
 export const NAV = [
+  { label: 'Exams', href: '/exams' },
   { label: 'Features', href: '/#features' },
   { label: 'How It Works', href: '/#how-it-works' },
   { label: 'Pricing', href: '/pricing' },
@@ -27,14 +28,14 @@ export const NAV = [
 ]
 
 export const HERO = {
-  titleTop: 'Cramly AI',
-  titleBottom: 'Study Assistant',
-  lede: 'Cramly is your study partner that turns your notes into answers, flashcards and practice tests.',
+  titleTop: 'exams.ai',
+  titleBottom: 'Exam prep, answered',
+  lede: 'Upload the past papers for your exam and exams.ai mines every question, marks the ones that repeat across years and turns them into practice tests.',
   cta: 'Upload File',
   sample: 'Try a sample file',
-  caption: 'Upload your file to Cramly and it will help you prepare for the exam quickly and painlessly.',
+  caption: 'Upload your file to exams.ai and it will help you prepare for the exam quickly and painlessly.',
   files: [
-    { kind: 'png', label: 'PNG File', lead: 'Snap a whiteboard', body: 'or a page of handwritten notes and Cramly reads it like text.' },
+    { kind: 'png', label: 'PNG File', lead: 'Snap a whiteboard', body: 'or a page of handwritten notes and exams.ai reads it like text.' },
     { kind: 'doc', label: 'DOC File', lead: 'Drop in your essay drafts', body: 'and lecture notes to get a summary and key terms.' },
     { kind: 'pdf', label: 'PDF File', lead: 'Easily upload', body: 'your PDF file to begin analysing, quizzing or storing it securely in seconds.' },
   ] as const,
@@ -45,7 +46,7 @@ export const FEATURES = {
   title: 'Everything between your notes and a passing grade',
   lede: 'One upload gives you a tutor that has read the material, a deck of flashcards and a practice test.',
   items: [
-    { image: 'upload' as const, title: 'Reads anything you study from', body: 'PDFs, slides, Word documents and photos of handwritten notes. Cramly keeps page numbers, so every answer points back to the source.' },
+    { image: 'upload' as const, title: 'Reads anything you study from', body: 'PDFs, slides, Word documents and photos of handwritten notes. exams.ai keeps page numbers, so every answer points back to the source.' },
     { image: 'cards' as const, title: 'Flashcards that know when to come back', body: 'Spaced repetition schedules each card for the moment you are about to forget it. Ten minutes a day beats a night of cramming.' },
     { image: 'quiz' as const, title: 'Practice tests with explanations', body: 'Multiple-choice questions written from your material, with a short reason for every answer so mistakes turn into understanding.' },
   ],
@@ -61,8 +62,8 @@ export const STEPS = {
   eyebrow: 'How it works',
   title: 'From upload to exam-ready in three steps',
   items: [
-    { n: '01', title: 'Upload your material', body: 'Lecture slides, a textbook chapter or a photo of the board. Up to 25 MB per file on the free plan.' },
-    { n: '02', title: 'Cramly builds your study pack', body: 'A summary, key points, a flashcard deck and a practice quiz, in about ten seconds.' },
+    { n: '01', title: 'Upload your material', body: 'Lecture slides, a textbook chapter or a photo of the board. Up to 20 papers at once, 200 MB each.' },
+    { n: '02', title: 'exams.ai builds your study pack', body: 'A summary, key points, a flashcard deck and a practice quiz, in about ten seconds.' },
     { n: '03', title: 'Study with a tutor beside you', body: 'Ask questions, review cards when they are due and track your score as the exam gets closer.' },
   ],
   demo: [
@@ -97,14 +98,14 @@ export type Plan = {
 }
 
 export const PLANS: Plan[] = [
-  { id: 'free', name: 'Free', monthly: 0, yearly: 0, blurb: 'For trying Cramly on one course.', cta: 'Start free', features: ['3 uploads a month', 'Files up to 25 MB', '50 tutor questions a day', 'Flashcards and quizzes'] },
+  { id: 'free', name: 'Free', monthly: 0, yearly: 0, blurb: 'For trying exams.ai on one course.', cta: 'Start free', features: ['3 uploads a month', 'Files up to 200 MB', '50 tutor questions a day', 'Flashcards and quizzes'] },
   { id: 'plus', name: 'Plus', monthly: 9, yearly: 7, blurb: 'For a full timetable of courses.', cta: 'Start 7-day trial', featured: true, features: ['Unlimited uploads', 'Files up to 200 MB', 'Unlimited tutor questions', 'Exam countdown planner', 'Export decks to Anki'] },
   { id: 'team', name: 'Study group', monthly: 24, yearly: 19, blurb: 'For up to six classmates.', cta: 'Create a group', features: ['Everything in Plus', '6 members', 'Shared library and decks', 'Group quiz battles'] },
 ]
 
 export const COMPARE: { label: string; values: [string | boolean, string | boolean, string | boolean] }[] = [
   { label: 'Uploads per month', values: ['3', 'Unlimited', 'Unlimited'] },
-  { label: 'Largest file', values: ['25 MB', '200 MB', '200 MB'] },
+  { label: 'Largest file', values: ['200 MB', '200 MB', '200 MB'] },
   { label: 'Tutor questions', values: ['50 a day', 'Unlimited', 'Unlimited'] },
   { label: 'Flashcards with spaced repetition', values: [true, true, true] },
   { label: 'Practice quizzes', values: [true, true, true] },
@@ -116,17 +117,17 @@ export const COMPARE: { label: string; values: [string | boolean, string | boole
 ]
 
 export const FAQ = [
-  { q: 'Does Cramly make things up?', a: 'Cramly answers only from the files you upload and cites the page each answer came from. When something is not in your material, it says so instead of guessing.' },
-  { q: 'Which files can I upload?', a: 'PDF, Word, PowerPoint, plain text and Markdown, plus PNG or JPG photos of notes and whiteboards. Free accounts can upload files up to 25 MB.' },
+  { q: 'Does exams.ai make things up?', a: 'exams.ai answers only from the files you upload and cites the page each answer came from. When something is not in your material, it says so instead of guessing.' },
+  { q: 'Which files can I upload?', a: 'PDF, Word, PowerPoint, plain text and Markdown, plus PNG or JPG photos of notes and whiteboards. Free accounts can add 20 papers at a time, up to 200 MB each.' },
   { q: 'Are my notes private?', a: 'Yes. Files are encrypted at rest, visible only to you (or your study group), and never used to train any model. Delete a file and it is gone.' },
-  { q: 'Is it allowed by my school?', a: 'Cramly is a study tool, like flashcards or a tutor. It does not write coursework for you. Check your course rules for exams and graded assignments.' },
+  { q: 'Is it allowed by my school?', a: 'exams.ai is a study tool, like flashcards or a tutor. It does not write coursework for you. Check your course rules for exams and graded assignments.' },
   { q: 'Can I cancel any time?', a: 'Yes. Plans renew monthly or yearly and you can cancel from Settings. Your library stays readable on the free plan.' },
 ]
 
 export const ABOUT = {
-  eyebrow: 'About Cramly',
+  eyebrow: 'About exams.ai',
   title: 'We build the study partner we wanted at 2 a.m. before finals',
-  lede: 'Cramly started in a university library in 2024, when three students got tired of rewriting slides into flashcards. Today it helps students in 140 countries prepare for exams with less stress and more sleep.',
+  lede: 'exams.ai started in a university library in 2024, when three students got tired of rewriting slides into flashcards. Today it helps students in 140 countries prepare for exams with less stress and more sleep.',
   values: [
     { title: 'Your material, not the internet', body: 'Answers come from what you uploaded, with the page number. Studying should make you surer, not more confused.' },
     { title: 'Learning over shortcuts', body: 'We help you understand and remember. We do not write essays or sit exams for anyone.' },
@@ -156,7 +157,7 @@ export const FOOTER = {
     { title: 'Company', links: [{ label: 'About', href: '/about' }, { label: 'Contact', href: '/about#contact' }, { label: 'Style guide', href: '/styleguide' }] },
     { title: 'Account', links: [{ label: 'Log in', href: '/login' }, { label: 'Sign up', href: '/signup' }] },
   ],
-  legal: '© 2026 Cramly. Study responsibly.',
+  legal: '© 2026 exams.ai. Study responsibly.',
 }
 
 export const AUTH = {
@@ -164,5 +165,5 @@ export const AUTH = {
   loginLede: 'Pick up where you left off. Your library is waiting.',
   signupTitle: 'Create your account',
   signupLede: 'Free forever for one course. Upgrade when your timetable fills up.',
-  aside: 'Students who review with Cramly for 10 minutes a day remember twice as much a week later.',
+  aside: 'Students who review with exams.ai for 10 minutes a day remember twice as much a week later.',
 }

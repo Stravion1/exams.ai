@@ -3,7 +3,8 @@ import type { ComponentType, ReactNode } from 'react'
 
 import { ToastProvider } from './components/Toast'
 import { BRAND } from './content'
-import { scrollToHash, useLocation } from './lib/router'
+import { match, scrollToHash, useLocation } from './lib/router'
+import { EXAM_BY_SLUG } from './lib/exams'
 import { Home } from './pages/Home'
 import { NotFound } from './pages/NotFound'
 import { Footer } from './sections/Footer'
@@ -21,18 +22,24 @@ const LibraryPage = page(() => import('./pages/app/Library'), 'LibraryPage')
 const ChatPage = page(() => import('./pages/app/Chat'), 'ChatPage')
 const FlashcardsPage = page(() => import('./pages/app/Flashcards'), 'FlashcardsPage')
 const QuizPage = page(() => import('./pages/app/Quiz'), 'QuizPage')
+const Exams = page(() => import('./pages/Exams'), 'Exams')
+// The workspace takes a prop, so it gets its own lazy wrapper.
+const ExamSpace = lazy(() => import('./pages/exam/ExamSpace').then((m) => ({ default: m.ExamSpace })))
 
 /*
   The route table. `layout` picks the frame: the marketing site (nav and
   footer), the bare auth screens, or the app shell.
 */
-type Route = { path: string; title: string; layout: 'site' | 'bare' | 'app'; render: () => ReactNode }
+type Route = { path: string; title: string; layout: 'site' | 'bare' | 'app'; render: (params: Record<string, string>) => ReactNode }
 
 const routes: Route[] = [
   { path: '/', title: '', layout: 'site', render: () => <Home /> },
   { path: '/pricing', title: 'Pricing', layout: 'site', render: () => <Pricing /> },
   { path: '/about', title: 'About', layout: 'site', render: () => <About /> },
   { path: '/styleguide', title: 'Style guide', layout: 'site', render: () => <Styleguide /> },
+  { path: '/exams', title: 'Exams', layout: 'site', render: () => <Exams /> },
+  // `@exam` means the title is the exam's own name (see the title lookup below).
+  { path: '/exams/:slug', title: '@exam', layout: 'site', render: (params) => <ExamSpace slug={params.slug} /> },
   { path: '/login', title: 'Log in', layout: 'bare', render: () => <Login /> },
   { path: '/signup', title: 'Sign up', layout: 'bare', render: () => <Signup /> },
   { path: '/app', title: 'Library', layout: 'app', render: () => <LibraryPage /> },
@@ -43,12 +50,29 @@ const routes: Route[] = [
 
 const Blank = () => <div className="min-h-screen" aria-busy="true" />
 
+/** Exact paths first, then `/exams/:slug`-style patterns. */
+function findRoute(path: string) {
+  for (const route of routes) {
+    if (route.path.includes(':')) {
+      const params = match(route.path, path)
+      if (params) return { route, params }
+    } else if (route.path === path) {
+      return { route, params: {} as Record<string, string> }
+    }
+  }
+  return null
+}
+
 export function App() {
   const { path, hash } = useLocation()
-  const hit = routes.find((r) => r.path === path)
+  const found = findRoute(path)
   const main = useRef<HTMLElement>(null)
   const first = useRef(true)
-  const title = hit ? hit.title : 'Page not found'
+  const title = found
+    ? found.route.title === '@exam'
+      ? (EXAM_BY_SLUG[found.params.slug]?.name ?? 'Exam')
+      : found.route.title
+    : 'Page not found'
 
   useEffect(() => {
     document.title = title ? `${title} | ${BRAND.name}` : `${BRAND.name}: ${BRAND.tagline}`
@@ -75,22 +99,22 @@ export function App() {
   }, [path, hash])
 
   let body: ReactNode
-  if (hit?.layout === 'app') {
+  if (found?.route.layout === 'app') {
     body = (
       <Suspense fallback={<Blank />}>
         <AppShell>
-          <Suspense fallback={<Blank />}>{hit.render()}</Suspense>
+          <Suspense fallback={<Blank />}>{found.route.render(found.params)}</Suspense>
         </AppShell>
       </Suspense>
     )
-  } else if (hit?.layout === 'bare') {
-    body = <Suspense fallback={<Blank />}>{hit.render()}</Suspense>
+  } else if (found?.route.layout === 'bare') {
+    body = <Suspense fallback={<Blank />}>{found.route.render(found.params)}</Suspense>
   } else {
     body = (
       <>
         <Nav overlay={path === '/'} />
         <main id="main" ref={main} tabIndex={-1} className="outline-none">
-          <Suspense fallback={<Blank />}>{hit ? hit.render() : <NotFound />}</Suspense>
+          <Suspense fallback={<Blank />}>{found ? found.route.render(found.params) : <NotFound />}</Suspense>
         </main>
         <Footer />
       </>

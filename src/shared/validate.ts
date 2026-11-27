@@ -52,7 +52,9 @@ export function validateContact(b: { name?: unknown; email?: unknown; message?: 
 }
 
 export const ACCEPTED = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'txt', 'md', 'ppt', 'pptx'] as const
-export const MAX_BYTES = 25 * 1024 * 1024
+export const MAX_BYTES = 200 * 1024 * 1024
+/** Papers can be added in batches, up to this many at a time. */
+export const MAX_FILES = 20
 
 export function fileKind(name: string): 'pdf' | 'doc' | 'png' | 'txt' | 'ppt' {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
@@ -68,10 +70,10 @@ export function validateUpload(b: { name?: unknown; size?: unknown }): string | 
   if (!name) return 'Choose a file to upload.'
   if (name.length > 180) return 'That file name is too long.'
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (!name.includes('.') || !ACCEPTED.includes(ext as (typeof ACCEPTED)[number])) return 'Cramly reads PDF, Word, PowerPoint, images and text files.'
+  if (!name.includes('.') || !ACCEPTED.includes(ext as (typeof ACCEPTED)[number])) return 'exams.ai reads PDF, Word, PowerPoint, images and text files.'
   const size = typeof b.size === 'number' ? b.size : -1
   if (!Number.isFinite(size) || size <= 0) return 'That file looks empty.'
-  if (size > MAX_BYTES) return 'Files can be up to 25 MB on the free plan.'
+  if (size > MAX_BYTES) return 'Files can be up to 200 MB.'
   return null
 }
 
@@ -79,5 +81,18 @@ export function validateQuestion(v: unknown): string | null {
   const s = typeof v === 'string' ? v.trim() : ''
   if (!s) return 'Ask a question first.'
   if (s.length > 600) return 'Keep questions under 600 characters.'
+  return null
+}
+
+/** One chunk of extracted paper text, sent to the model for question mining. */
+export function validateAnalyze(b: { exam?: unknown; examName?: unknown; paper?: unknown; text?: unknown }): string | null {
+  const exam = typeof b.examName === 'string' ? b.examName.trim() : ''
+  if (!exam) return 'Tell the analyser which exam this paper belongs to.'
+  if (exam.length > 120) return 'That exam name is too long.'
+  const paper = typeof b.paper === 'string' ? b.paper.trim() : ''
+  if (paper.length > 200) return 'That file name is too long.'
+  const text = typeof b.text === 'string' ? b.text.trim() : ''
+  if (text.length < 80) return 'That part of the paper has too little text to read.'
+  if (text.length > 20_000) return 'Send the paper in smaller pieces.'
   return null
 }

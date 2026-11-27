@@ -149,7 +149,7 @@ export function FlashcardsPage() {
           <EmptyState
             icon={<PartyPopper className="size-6" />}
             title={done ? 'Deck finished' : 'All caught up'}
-            body={done ? `You reviewed ${done} card${done === 1 ? '' : 's'}. Cramly will bring each one back just before you forget it.` : 'No cards are due in this file right now. Review the whole deck anyway, or test yourself with the quiz.'}
+            body={done ? `You reviewed ${done} card${done === 1 ? '' : 's'}. exams.ai will bring each one back just before you forget it.` : 'No cards are due in this file right now. Review the whole deck anyway, or test yourself with the quiz.'}
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <Button

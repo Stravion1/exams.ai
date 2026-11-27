@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 
 import { PACK_BY_ID, answer, packForFile } from '../shared/packs'
-import { fileKind, validateContact, validateEmail, validateLogin, validateQuestion, validateSignup, validateUpload } from '../shared/validate'
-import { AiError, aiConfig, askModel, buildPack, contextOfPack, probe, readContext, readHistory } from './ai'
+import { fileKind, validateAnalyze, validateContact, validateEmail, validateLogin, validateQuestion, validateSignup, validateUpload } from '../shared/validate'
+import { AiError, aiConfig, askModel, buildPack, contextOfPack, extractQuestions, probe, readContext, readHistory } from './ai'
 
 /*
   The Worker in front of the static site. Every form posts here and gets the
@@ -132,6 +132,28 @@ app.post('/api/chat', async (c) => {
     return c.json({ ok: true, ai: true, reply })
   } catch (err) {
     return c.json({ error: failed(err, 'The model could not answer that.'), ai: true }, 502)
+  }
+})
+
+// Mine one chunk of a past paper into structured questions (the client chunks).
+app.post('/api/analyze', async (c) => {
+  const b = await body<{ exam: string; examName: string; paper: string; text: string }>(c)
+  if (!b) return c.json(invalidJson, 400)
+  const error = validateAnalyze(b)
+  if (error) return c.json({ error }, 422)
+
+  const cfg = aiConfig(c.env)
+  if (!cfg) return c.json({ error: 'Add AI_API_KEY to the Worker before analysing papers.' }, 503)
+
+  try {
+    const questions = await extractQuestions(cfg, {
+      exam: String(b.examName).trim(),
+      paper: String(b.paper).trim(),
+      text: String(b.text),
+    })
+    return c.json({ ok: true, questions })
+  } catch (err) {
+    return c.json({ error: failed(err, 'That part of the paper could not be read.') }, 502)
   }
 })
 

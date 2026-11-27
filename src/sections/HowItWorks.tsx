@@ -29,7 +29,7 @@ export function HowItWorks() {
           </ol>
         </div>
 
-        <div ref={ref} className="glass rounded-[32px] p-5 sm:p-7" aria-label="Example conversation with Cramly">
+        <div ref={ref} className="glass rounded-[32px] p-5 sm:p-7" aria-label="Example conversation with exams.ai">
           <div className="mb-6 flex items-center justify-between border-b border-line pb-4">
             <p className="text-[14px] text-soft">BIO 201 Cell division.pdf</p>
             <span className="text-[12.5px] text-faint">14 pages</span>

@@ -22,7 +22,7 @@ type Reply = { text: string; cite: string | null; suggestions: string[] }
 const uid = () => Math.random().toString(36).slice(2, 10)
 
 /**
- * Ask Cramly. Questions go to POST /api/chat, which answers from the document
+ * Ask exams.ai. Questions go to POST /api/chat, which answers from the document
  * with the model when AI_API_KEY is set (and from the study pack otherwise);
  * the reply is revealed word by word like a stream.
  */
@@ -134,7 +134,7 @@ export function ChatPage() {
 
   return (
     <div className="flex min-h-[calc(100svh-64px)] flex-col lg:h-svh lg:min-h-0">
-      <AppHeader title="Ask Cramly" lede="Answers come only from your file, with the page they came from.">
+      <AppHeader title="Ask the tutor" lede="Answers come only from your file, with the page they came from.">
         <div className="flex w-full items-center gap-2 sm:w-auto">
           <DocPicker doc={doc} docs={docs} onChange={pick} />
           <IconButton className="shrink-0" label="Clear conversation" disabled={!thread.length || busy} onClick={() => setChats((c) => ({ ...c, [doc.id]: [] }))}>
