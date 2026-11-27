@@ -39,6 +39,12 @@ type Tab = 'papers' | 'bank' | 'practice' | 'ask'
 
 type Mined = { subject: string; topic: string; prompt: string; options: string[]; answer: number; why: string }
 
+/** A row of the pre-mined archive that ships with the build (public/data). */
+type BundledRow = Omit<BankQuestion, 'id' | 'exam' | 'key'>
+
+/** One chapter's share of the past papers, newest-first chapters ranked by it. */
+type TopicRow = { topic: string; questions: number; first: number; latest: number }
+
 /**
  * One exam's workspace: upload past papers, mine them into a question bank,
  * practise from it and ask about it. Papers and questions live in IndexedDB;
@@ -49,6 +55,8 @@ export function ExamSpace({ slug }: { slug: string }) {
   const [tab, setTab] = useState<Tab>('papers')
   const [papers, setPapers] = useState<Paper[]>([])
   const [questions, setQuestions] = useState<BankQuestion[]>([])
+  const [bundled, setBundled] = useState<BankQuestion[]>([])
+  const [topicCounts, setTopicCounts] = useState<ReadonlyMap<string, number>>(new Map())
   const [jobs, setJobs] = useState<Record<string, Job>>({})
   const [busy, setBusy] = useState(false)
   const [aiReady, setAiReady] = useState<boolean | null>(null)
@@ -76,7 +84,39 @@ export function ExamSpace({ slug }: { slug: string }) {
     }
   }, [])
 
-  const rows = useMemo(() => rankBank(questions), [questions])
+  /*
+    NEET ships with the questions mined out of the papers in this repo, so the
+    workspace is worth opening before anything is uploaded. Uploaded papers are
+    added to the same ranking rather than replacing it.
+  */
+  useEffect(() => {
+    if (!exam || exam.slug !== 'neet-ug' || bundled.length) return
+    let live = true
+    Promise.all([
+      fetch('/data/neet-bank.json').then((r) => (r.ok ? (r.json() as Promise<BundledRow[]>) : [])),
+      fetch('/data/neet-topics.json').then((r) => (r.ok ? (r.json() as Promise<TopicRow[]>) : [])),
+    ])
+      .then(([data, topics]) => {
+        if (!live) return
+        if (Array.isArray(topics) && topics.length) setTopicCounts(new Map(topics.map((t) => [t.topic, t.questions])))
+        if (!Array.isArray(data) || !data.length) return
+        setBundled(
+          data.map((q, i) => ({
+            ...q,
+            id: `bundled:${i}`,
+            exam: 'neet-ug',
+            key: promptHash(q.prompt),
+          })),
+        )
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [exam, bundled.length])
+
+  const all = useMemo(() => (bundled.length ? [...bundled, ...questions] : questions), [bundled, questions])
+  const rows = useMemo(() => rankBank(all, 0.78, topicCounts), [all, topicCounts])
   const stats = useMemo(() => bankStats(rows), [rows])
 
   if (!exam) {
@@ -283,6 +323,14 @@ export function ExamSpace({ slug }: { slug: string }) {
       </header>
 
       <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:px-12">
+        {bundled.length > 0 && (
+          <Notice tone="success" className="mb-6">
+            <strong className="font-semibold">{bundled.length.toLocaleString()} NEET questions loaded</strong> from the papers and chapter sets
+            committed to this repo. Ranked by repeat, then by how often the chapter is asked, then by recency. Upload your own papers to
+            add to the same bank.
+          </Notice>
+        )}
+
         {aiReady === false && (
           <Notice tone="error" className="mb-6">
             <strong className="font-semibold">No model connected.</strong> Add <code className="rounded bg-black/30 px-1.5 py-0.5">AI_API_KEY</code> to

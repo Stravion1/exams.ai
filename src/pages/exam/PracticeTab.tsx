@@ -159,7 +159,12 @@ export function PracticeTab({ rows, onBrowse }: { rows: BankRow[]; onBrowse: () 
 
           {checked && (
             <Notice tone={right ? 'success' : 'error'} className="mt-5">
-              <strong className="font-semibold">{right ? 'Correct.' : `Not quite: the answer is ${q.options[q.answer]}.`}</strong> {q.why}
+              <strong className="font-semibold">{right ? 'Correct.' : `Not quite: the answer is ${q.options[q.answer]}.`}</strong>{' '}
+              {q.why ? (
+                q.why
+              ) : right ? null : (
+                <span className="text-muted">This paper's printed solution could not be read for this question.</span>
+              )}
             </Notice>
           )}
         </fieldset>

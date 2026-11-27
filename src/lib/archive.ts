@@ -232,10 +232,12 @@ function fnv(s: string) {
 export function promptHash(s: string) {
   const content = normalisePrompt(s)
   const words = content.split(' ').filter((w) => w && w !== NEG_MARK)
-  // A stem made only of boilerplate ("which of these is correct") loses every
-  // content word. Fall back to the full text for those, or every such stem in
+  // A stem made only of boilerplate ("which of these is correct", "which of the
+  // following statements is incorrect") keeps one or two generic words after
+  // normalisation. Fall back to the full text for those, or every such stem in
   // the bank would look identical to every other one.
-  const basis = words.length >= 2 ? content : s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  const basis =
+    words.length > 2 ? content : s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
   return fnv(basis)
 }
 
@@ -284,14 +286,38 @@ export type BankRow = {
  * wording changed) are merged with a similarity threshold so a reworded repeat
  * still counts as a repeat.
  */
-export function rankBank(questions: BankQuestion[], threshold = 0.78): BankRow[] {
+export function rankBank(
+  questions: BankQuestion[],
+  threshold = 0.78,
+  /** How many past papers each chapter contributed, used to weigh priority. */
+  topicCounts?: ReadonlyMap<string, number>,
+): BankRow[] {
   const groups: { key: string; items: BankQuestion[] }[] = []
   const exact = new Map<string, number>()
+
+  /*
+    A stem does not identify a question on its own: papers reuse generic ones
+    ("Which of the following statements is incorrect?", "Match List-I with
+    List-II") and put the whole question in the options. The correct option is
+    the fingerprint, so two different questions never share a group just because
+    their wording matches.
+  */
+  const answerOf = (q: BankQuestion) => q.options[q.answer] ?? ''
+  const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const sameAnswer = (a: string, b: string) => {
+    const A = flat(a)
+    const B = flat(b)
+    if (!A || !B) return false
+    return A === B || similarity(a, b) >= 0.5
+  }
+  const identity = (q: BankQuestion) => `${promptHash(q.prompt)}|${flat(answerOf(q))}`
+  // A chapter that keeps coming back is the strongest signal after a repeat.
+  const topicWeight = (topic: string) => Math.min(6, Math.round((topicCounts?.get(topic) ?? 0) / 15))
 
   for (const q of questions) {
     // Recompute rather than trusting `key`: rows mined before the matching rules
     // changed must be grouped by the current rules, not the old ones.
-    const key = q.prompt.trim() ? promptHash(q.prompt) : q.key || ''
+    const key = q.prompt.trim() ? identity(q) : q.key || ''
     const hit = exact.get(key)
     if (hit !== undefined) {
       groups[hit].items.push(q)
@@ -300,8 +326,16 @@ export function rankBank(questions: BankQuestion[], threshold = 0.78): BankRow[]
     // Near-duplicates must share at least two content words, so two short
     // questions that only share one word are not merged by accident.
     const near = groups.findIndex((g) => {
-      if (sharedWords(g.items[0].prompt, q.prompt) < 2) return false
-      return similarity(g.items[0].prompt, q.prompt) >= threshold
+      const first = g.items[0]
+      if (sharedWords(first.prompt, q.prompt) < 2) return false
+      const sim = similarity(first.prompt, q.prompt)
+      if (sim < threshold) return false
+      // A stem repeating inside one paper is an extraction duplicate, not a
+      // question that came back in a later year.
+      if (g.items.some((x) => x.paperId === q.paperId)) return false
+      // Near-identical wording still proves nothing on its own: the generic
+      // stems above recur word for word, so the correct option must agree too.
+      return sameAnswer(answerOf(first), answerOf(q))
     })
     if (near !== -1) {
       groups[near].items.push(q)
@@ -316,15 +350,23 @@ export function rankBank(questions: BankQuestion[], threshold = 0.78): BankRow[]
     const seen = new Map<string, { paperId: string; paperName: string; year: number | null }>()
     for (const q of g.items) seen.set(q.paperId, { paperId: q.paperId, paperName: q.paperName, year: q.year })
     const papers = [...seen.values()].sort((a, b) => (b.year ?? 0) - (a.year ?? 0))
-    const repeats = papers.length
+    // The same question can sit in a year's paper and its chapter set: that is
+    // one sitting, not a repeat. Count distinct years, falling back to the
+    // paper for uploads where the year is unknown.
+    const repeats = new Set(papers.map((p) => p.year ?? p.paperId)).size
     const newest = papers[0]?.year ?? 0
     return {
       question: g.items[0],
       repeats,
       papers,
-      // A repeat is the strongest signal, then recency, then the length of the
-      // explanation (a well-explained question is usually a real one).
-      importance: repeats * 10 + Math.min(3, Math.max(0, newest - 2020)) + Math.min(3, Math.round(g.items[0].why.length / 120)),
+      // A repeat is the strongest signal, then how often the chapter is asked,
+      // then recency, then the length of the explanation (a well-explained
+      // question is usually a real one).
+      importance:
+        repeats * 10 +
+        topicWeight(g.items[0].topic) +
+        Math.min(3, Math.max(0, newest - 2020)) +
+        Math.min(3, Math.round(g.items[0].why.length / 120)),
     }
   })
 
