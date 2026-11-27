@@ -50,14 +50,21 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
   const [usedSeconds, setUsedSeconds] = useState(0)
   const palette = useRef<HTMLDivElement>(null)
 
+  /*
+    A question printed twice with two different answers is not safe to mark, so
+    it never reaches a paper.
+  */
+  const usable = useMemo(() => rows.filter((r) => !r.question.keyConflict), [rows])
+  const disputed = rows.length - usable.length
+
   const available = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const r of rows) counts.set(r.question.subject, (counts.get(r.question.subject) ?? 0) + 1)
+    for (const r of usable) counts.set(r.question.subject, (counts.get(r.question.subject) ?? 0) + 1)
     return PATTERN.sections.map((s) => ({ ...s, have: counts.get(s.subject) ?? 0 }))
-  }, [rows])
+  }, [usable])
 
   const short = available.find((s) => s.have < s.count)
-  const canStart = rows.length > 0 && !short
+  const canStart = usable.length > 0 && !short
 
   useEffect(() => {
     if (phase !== 'running') return
@@ -76,7 +83,7 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
   function start() {
     const picked: BankRow[] = []
     for (const section of PATTERN.sections) {
-      picked.push(...rows.filter((r) => r.question.subject === section.subject).slice(0, section.count))
+      picked.push(...usable.filter((r) => r.question.subject === section.subject).slice(0, section.count))
     }
     setDeck(picked)
     setAnswers(new Array(picked.length).fill(null))
@@ -111,6 +118,11 @@ export function MockTab({ rows, aiReady }: { rows: BankRow[]; aiReady: boolean }
             One paper in the real pattern: {PATTERN.minutes} minutes, +{PATTERN.marks} for a correct answer, {PATTERN.penalty}{' '}
             for a wrong one, nothing for a blank.
           </p>
+          {disputed > 0 && (
+            <p className="mt-2 text-[13px] text-faint">
+              {disputed} questions sit in both a paper and a chapter set that disagree on the answer, so they are left out of mocks.
+            </p>
+          )}
 
           <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {available.map((s) => (

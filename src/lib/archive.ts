@@ -49,6 +49,11 @@ export type BankQuestion = {
   whySource?: 'printed' | 'shared' | 'ai'
   /** The paper whose printed working was borrowed, when whySource is 'shared'. */
   whyFrom?: string
+  /**
+   * Set when a full paper and a chapter set print this question with different
+   * answers: the other source's answer. One of the two keys is wrong.
+   */
+  keyConflict?: string
 }
 
 /** A paper name short enough for a caption. */

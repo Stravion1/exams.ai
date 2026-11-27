@@ -55,7 +55,12 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
   const chapters = useMemo(() => masteryByChapter(attempts), [attempts])
 
   const subjects = useMemo(() => [...new Set(rows.map((r) => r.question.subject))].sort(), [rows])
-  const pool = useMemo(() => rows.filter((r) => subject === 'All' || r.question.subject === subject), [rows, subject])
+  // A two-key question cannot be marked fairly, so practice skips it.
+  const disputed = useMemo(() => rows.filter((r) => r.question.keyConflict).length, [rows])
+  const pool = useMemo(
+    () => rows.filter((r) => !r.question.keyConflict && (subject === 'All' || r.question.subject === subject)),
+    [rows, subject],
+  )
   const repeats = pool.filter((r) => r.repeats > 1).length
 
   if (!rows.length) {
@@ -146,6 +151,11 @@ export function PracticeTab({ rows, aiReady, onBrowse }: { rows: BankRow[]; aiRe
             {pool.length} questions available{repeats ? ` · ${repeats} of them repeat across papers` : ''}
             {due.size ? ` · ${due.size} missed ${due.size === 1 ? 'question' : 'questions'} will come back first` : ''}
           </p>
+          {disputed > 0 && (
+            <p className="mt-1 text-[13px] text-faint">
+              {disputed} questions are left out here: a paper and a chapter set print them with different answers.
+            </p>
+          )}
 
           {attempts.length > 0 && (
             <div className="mt-4 rounded-[18px] border border-line bg-white/3 p-4">

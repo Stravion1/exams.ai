@@ -65,6 +65,36 @@ function readable(s) {
   return words.length >= 6 && letters / (s.replace(/\s/g, '').length || 1) > 0.55
 }
 
+/**
+ * Chapter PDFs repeat a promo line and a page number at the foot of every page,
+ * which lands inside the final option. Cut the option at the first such marker.
+ */
+const FURNITURE = [
+  /Practise\s+.{0,80}?online with instant answer checking/i,
+  /prepwiser\.in\/neet\/learn/i,
+  /PrepWiser\s*·/i,
+  /PrepWiser\.?$/i,
+  /\bRe-?NEET\b.*$/i,
+  /\bNEET\s+\d{4}\b.*$/i,
+  /\b\d{1,2}\s*\/\s*\d{1,2}\s*$/,
+]
+
+function cleanOption(s) {
+  let out = s
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const re of FURNITURE) {
+      const at = out.search(re)
+      if (at > 0) {
+        out = out.slice(0, at)
+        changed = true
+      }
+    }
+  }
+  return tidy(out).replace(/[›>]+$/, '').trim()
+}
+
 function cleanBody(s, cap) {
   const out = tidy(s)
     .split(/(?<=[a-z0-9]) /i)
@@ -235,7 +265,9 @@ function parsePrepwiser(text, meta) {
     /* The Q-line is followed by its solution link; the stem starts after it. */
     const urlEnd = body.match(/prepwiser\.in\/neet\/questions\/\S+/i)
     const inner = urlEnd ? body.slice(urlEnd.index + urlEnd[0].length) : body
-    const { options } = splitOptions(inner)
+    const { options: rawOptions } = splitOptions(inner)
+    // Page furniture gets swallowed into the last option; strip it.
+    const options = rawOptions.map(cleanOption)
     const cut = inner.search(/\(\d\)|\([a-fA-F]\)/)
     const stem = tidy(cut > -1 ? inner.slice(0, cut) : inner).replace(/^[›>\s]+/, '')
     if (normalisePrompt(stem).length < 12) {
@@ -446,6 +478,100 @@ for (const q of all) {
 const stillUnclassified = all.filter((q) => !q.topic).length
 console.log(`chapters: ${taggedChapters} full-paper questions took a chapter from a matching set, ${stillUnclassified} still unnamed`)
 
+/*
+  The same question printed in a full paper and in a chapter set gives two
+  independent answer keys. Where they disagree one of them is wrong, and there
+  is no way to tell which from these files alone, so both are flagged rather
+  than one being silently trusted.
+*/
+const keyText = (s) => (s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** Dice coefficient over character pairs: catches "sp2 hybridised" vs "hybridised". */
+function charSimilarity(a, b) {
+  if (a === b) return 1
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0
+  const pairs = (s) => {
+    const out = new Map()
+    for (let i = 0; i < s.length - 1; i++) {
+      const p = s.slice(i, i + 2)
+      out.set(p, (out.get(p) ?? 0) + 1)
+    }
+    return out
+  }
+  const A = pairs(a)
+  const B = pairs(b)
+  let shared = 0
+  for (const [p, n] of A) shared += Math.min(n, B.get(p) ?? 0)
+  return (2 * shared) / ((a.length - 1) + (b.length - 1))
+}
+
+/**
+ * Same answer, worded differently, is not a disagreement. "DNA fingerprinting"
+ * against "both genetic mapping and DNA fingerprinting" is one, though: that
+ * is a different claim, not a different spelling.
+ */
+const sameKeyText = (a, b) => {
+  const A = keyText(a)
+  const B = keyText(b)
+  if (!A || !B) return false
+  if (A === B) return true
+  return charSimilarity(A, B) >= 0.85
+}
+
+const setQuestions = all.filter((q) => !q.paperId.endsWith('-full'))
+const setIndex = new Map()
+for (let i = 0; i < setQuestions.length; i++) {
+  for (const w of new Set(normalisePrompt(setQuestions[i].prompt).split(' ').filter(Boolean))) {
+    if (w.length < 6) continue
+    const list = setIndex.get(w)
+    if (list) list.push(i)
+    else setIndex.set(w, [i])
+  }
+}
+
+let keyConflicts = 0
+for (const q of all) {
+  if (!q.paperId.endsWith('-full')) continue
+  const tokens = new Set(normalisePrompt(q.prompt).split(' ').filter(Boolean))
+  const candidates = new Set()
+  for (const w of tokens) {
+    if (w.length < 6) continue
+    for (const i of setIndex.get(w) ?? []) candidates.add(i)
+  }
+
+  let best = null
+  let bestSim = 0
+  for (const i of candidates) {
+    const other = setQuestions[i]
+    if (other.subject !== q.subject) continue
+    const otherTokens = new Set(normalisePrompt(other.prompt).split(' ').filter(Boolean))
+    let shared = 0
+    for (const w of tokens) if (otherTokens.has(w)) shared++
+    if (shared < 2) continue
+    const sim = shared / (tokens.size + otherTokens.size - shared)
+    if (sim < 0.9 || sim <= bestSim) continue
+    const mine = new Set(q.options.map(keyText))
+    const theirs = new Set(other.options.map(keyText))
+    let sameOptions = 0
+    for (const option of mine) if (option && theirs.has(option)) sameOptions++
+    if (sameOptions < 3) continue
+    best = other
+    bestSim = sim
+  }
+
+  if (!best) continue
+  const mine = q.options[q.answer] ?? ''
+  const theirs = best.options[best.answer] ?? ''
+  // Same position marked, and the option at that position reads the same: agreed.
+  const sameSlot = q.answer === best.answer && keyText(mine) === keyText(theirs)
+  if (sameSlot || sameKeyText(mine, theirs)) continue
+  q.keyConflict = theirs
+  best.keyConflict = mine
+  keyConflicts++
+}
+
+console.log(`answer keys: ${keyConflicts} questions where the paper and the chapter set disagree`)
+
 const byKey = new Map()
 for (const q of all) {
   const k = q.key || promptHash(q.prompt)
@@ -508,7 +634,14 @@ if (WRITE) {
     return row
   })
 
-  const json = JSON.stringify({ v: 1, papers, rows })
+  // Row index -> the other source's answer, for the questions whose keys clash.
+  const conflicts = {}
+  all.forEach((q, i) => {
+    if (q.keyConflict) conflicts[i] = q.keyConflict
+  })
+  console.log(`disputed keys written: ${Object.keys(conflicts).length}`)
+
+  const json = JSON.stringify({ v: 1, papers, rows, conflicts })
   const bankPath = join(ROOT, 'public/data/neet-bank.json')
   writeFileSync(bankPath, json)
 

@@ -32,6 +32,7 @@ export function BankTab({
   */
   const [visible, setVisible] = useState(50)
   const stats = useMemo(() => bankStats(rows), [rows])
+  const disputed = useMemo(() => rows.filter((r) => r.question.keyConflict).length, [rows])
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -83,6 +84,7 @@ export function BankTab({
 
       <p className="text-[13px] text-muted" aria-live="polite">
         {filtered.length} of {rows.length} questions · most important first
+        {disputed > 0 ? ` · ${disputed} with a disputed answer key` : ''}
       </p>
 
       <ol className="grid gap-3">
@@ -121,6 +123,16 @@ function BankItem({ row, index, aiReady }: { row: BankRow; index: number; aiRead
       </div>
 
       <p className="mt-3 text-[15.5px] leading-snug">{q.prompt}</p>
+
+      {q.keyConflict ? (
+        <div className="mt-3 rounded-xl border border-amber/30 bg-amber/5 px-3 py-2">
+          <p className="text-[13px] text-muted">
+            <span className="font-medium text-fg">Answer keys disagree.</span> Another paper prints this question with{' '}
+            <span className="font-medium text-fg">“{q.keyConflict}”</span> as the answer. One of the two is wrong, so this question is
+            kept out of practice and mocks until it is settled.
+          </p>
+        </div>
+      ) : null}
 
       <details className="group mt-3">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-[13.5px] font-medium text-leaf-text">

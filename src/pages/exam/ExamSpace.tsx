@@ -48,6 +48,8 @@ type CompactBank = {
   v: number
   papers: [string, number | null, string][]
   rows: [number, string, string, string, string[], number, string?, number?, number?][]
+  /** Row index -> the answer a second source gives, where the two disagree. */
+  conflicts?: Record<string, string>
 }
 
 /*
@@ -77,7 +79,7 @@ async function loadBundledBank(): Promise<BundledRow[]> {
     bank = (await plain.json()) as CompactBank
   }
 
-  return bank.rows.map(([paper, subject, topic, prompt, options, answer, why, shared, from]) => {
+  return bank.rows.map(([paper, subject, topic, prompt, options, answer, why, shared, from], index) => {
     const [paperId, year, paperName] = bank!.papers[paper] ?? ['', null, '']
     return {
       paperId,
@@ -92,6 +94,7 @@ async function loadBundledBank(): Promise<BundledRow[]> {
       // 1 means the working was borrowed from the same question in another paper.
       whySource: why ? (shared === 1 ? ('shared' as const) : ('printed' as const)) : undefined,
       whyFrom: shared === 1 && typeof from === 'number' ? bank!.papers[from]?.[2] : undefined,
+      keyConflict: bank!.conflicts?.[String(index)],
     }
   })
 }
