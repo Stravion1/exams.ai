@@ -176,32 +176,67 @@ export async function deleteExam(exam: string): Promise<void> {
  * Words that carry no subject matter. Stripping them makes two versions of the
  * same question (one worded differently) collapse to the same text, which is
  * what makes repeat detection work.
+ *
+ * Deliberately NOT in here: negation, conditionals and polarity words. "Which is
+ * NOT correct" and "Which is correct" are opposite questions, and "if" changes
+ * what is being asked, so those words must survive normalisation.
  */
 const STOP = new Set([
   'which', 'what', 'who', 'whom', 'whose', 'when', 'where', 'why', 'how', 'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'to',
   'and', 'or', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'it', 'its', 'that', 'this', 'these', 'those', 'with', 'by',
-  'from', 'as', 'following', 'statement', 'statements', 'correct', 'incorrect', 'true', 'false', 'define', 'defined', 'name',
-  'named', 'state', 'given', 'give', 'find', 'calculate', 'select', 'choose', 'option', 'options', 'question', 'questions',
-  'according', 'respect', 'can', 'will', 'would', 'should', 'do', 'does', 'has', 'have', 'not', 'if', 'then', 'than', 'into',
+  'from', 'as', 'following', 'statement', 'statements', 'define', 'defined', 'name', 'named', 'state', 'given', 'give', 'find',
+  'calculate', 'select', 'choose', 'option', 'options', 'question', 'questions', 'according', 'respect', 'can', 'will', 'would',
+  'should', 'do', 'does', 'has', 'have', 'then', 'than', 'into',
 ])
 
-/** "Which of the following is the SI unit of force?" → "si unit force" */
+/** Canonical token added to a negated stem, so polarity is compared, not lost. */
+const NEG_MARK = '~neg'
+
+/**
+ * Every way an MCQ stem flips meaning: negation, exceptions, and the "pick the
+ * wrong one" phrasing that is common in Indian exam papers.
+ */
+const NEGATION = /\b(?:not|never|none|no|cannot|except|excluding|neither|nor|incorrect|false|least|without)\b|n['’]t\b/i
+
+/** True when the question asks for the false/incorrect/exceptional option. */
+export function isNegative(s: string) {
+  return NEGATION.test(s)
+}
+
+/**
+ * "Which of the following is the SI unit of force?" → "si unit force"
+ * "Which of these is NOT correct?" → "not correct ~neg"
+ */
 export function normalisePrompt(s: string) {
-  return s
+  const base = s
     .toLowerCase()
     .replace(/\(.*?\)/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter((w) => w.length > 1 && !STOP.has(w))
     .join(' ')
+  if (!isNegative(s)) return base
+  return base ? `${base} ${NEG_MARK}` : NEG_MARK
 }
 
-/** A cheap stable hash of the normalised prompt. */
-export function promptHash(s: string) {
-  const n = normalisePrompt(s)
+function fnv(s: string) {
   let h = 2166136261
-  for (let i = 0; i < n.length; i++) h = Math.imul(h ^ n.charCodeAt(i), 16777619)
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
   return (h >>> 0).toString(36)
+}
+
+/**
+ * A cheap stable hash of the normalised prompt. Polarity is part of the hash, so
+ * a question and its negated twin can never share a key.
+ */
+export function promptHash(s: string) {
+  const content = normalisePrompt(s)
+  const words = content.split(' ').filter((w) => w && w !== NEG_MARK)
+  // A stem made only of boilerplate ("which of these is correct") loses every
+  // content word. Fall back to the full text for those, or every such stem in
+  // the bank would look identical to every other one.
+  const basis = words.length >= 2 ? content : s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  return fnv(basis)
 }
 
 function tokens(s: string) {
@@ -254,7 +289,9 @@ export function rankBank(questions: BankQuestion[], threshold = 0.78): BankRow[]
   const exact = new Map<string, number>()
 
   for (const q of questions) {
-    const key = q.key || promptHash(q.prompt)
+    // Recompute rather than trusting `key`: rows mined before the matching rules
+    // changed must be grouped by the current rules, not the old ones.
+    const key = q.prompt.trim() ? promptHash(q.prompt) : q.key || ''
     const hit = exact.get(key)
     if (hit !== undefined) {
       groups[hit].items.push(q)
