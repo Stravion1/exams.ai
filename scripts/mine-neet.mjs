@@ -370,19 +370,43 @@ if (sample) console.log(JSON.stringify(sample, null, 2).slice(0, 1400))
 
 if (WRITE) {
   mkdirSync(join(ROOT, 'public/data'), { recursive: true })
-  // Drop the fields the app recomputes, so the shipped asset stays small.
-  const slim = all.map(({ paperId, paperName, year, subject, topic, prompt, options, answer, why }) => ({
-    paperId,
-    paperName,
-    year,
-    subject,
-    topic,
-    prompt,
-    options,
-    answer,
-    why,
-  }))
-  writeFileSync(join(ROOT, 'public/data/neet-bank.json'), JSON.stringify(slim))
+  /*
+    Compact shape: each paper's name and year are stored once in a table, and a
+    question is a positional row instead of an object with eight repeated keys.
+    The app recomputes id and key, so neither is shipped.
+  */
+  const paperIndex = new Map()
+  const papers = []
+  for (const q of all) {
+    if (!paperIndex.has(q.paperId)) {
+      paperIndex.set(q.paperId, papers.length)
+      papers.push([q.paperId, q.year ?? null, q.paperName])
+    }
+  }
+  const rows = all.map((q) => {
+    const row = [paperIndex.get(q.paperId), q.subject, q.topic, q.prompt, q.options, q.answer]
+    // Most questions have no readable solution: leave the slot off entirely.
+    if (q.why) row.push(q.why)
+    return row
+  })
+
+  const json = JSON.stringify({ v: 1, papers, rows })
+  const bankPath = join(ROOT, 'public/data/neet-bank.json')
+  writeFileSync(bankPath, json)
+
+  /*
+    The asset layer transparently decompresses any *.gz it serves, so a
+    neet-bank.json.gz arrives in the browser as the full 1 MB anyway. The
+    compressed copy therefore carries a `.jsonz` extension and the page inflates
+    it with DecompressionStream; the plain JSON stays beside it as the fallback.
+  */
+  const gzPath = join(ROOT, 'public/data/neet-bank.jsonz')
+  writeFileSync(gzPath, Bun.gzipSync(json, { level: 9 }))
   writeFileSync(join(ROOT, 'public/data/neet-topics.json'), JSON.stringify(chapters))
-  console.log(`\nwrote public/data/neet-bank.json (${all.length}) and neet-topics.json (${chapters.length})`)
+
+  const gzBytes = statSync(gzPath).size
+  console.log(
+    `\nwrote neet-bank.json ${(json.length / 1024).toFixed(0)} KB (fetch uses ${(gzBytes / 1024).toFixed(0)} KB gzipped), ` +
+      `${all.length} questions in ${papers.length} papers, and neet-topics.json (${chapters.length})`,
+  )
 }

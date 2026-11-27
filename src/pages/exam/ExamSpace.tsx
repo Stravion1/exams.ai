@@ -42,6 +42,46 @@ type Mined = { subject: string; topic: string; prompt: string; options: string[]
 /** A row of the pre-mined archive that ships with the build (public/data). */
 type BundledRow = Omit<BankQuestion, 'id' | 'exam' | 'key'>
 
+/** The shipped bank: a paper table plus positional question rows. */
+type CompactBank = {
+  v: number
+  papers: [string, number | null, string][]
+  rows: [number, string, string, string, string[], number, string?][]
+}
+
+/*
+  The bank is shipped gzipped so the NEET page pulls ~260 KB instead of a
+  megabyte. The extension is `.jsonz` on purpose: the host decompresses any
+  `*.gz` it serves, which would make the compressed copy pointless. The plain
+  JSON next to it is the fallback for a browser without DecompressionStream.
+*/
+async function loadBundledBank(): Promise<BundledRow[]> {
+  let bank: CompactBank | null = null
+
+  if (typeof DecompressionStream !== 'undefined') {
+    const res = await fetch('/data/neet-bank.jsonz')
+    if (res.ok && res.body) {
+      try {
+        const stream = res.body.pipeThrough(new DecompressionStream('gzip'))
+        bank = JSON.parse(await new Response(stream).text()) as CompactBank
+      } catch {
+        bank = null
+      }
+    }
+  }
+
+  if (!bank) {
+    const plain = await fetch('/data/neet-bank.json')
+    if (!plain.ok) return []
+    bank = (await plain.json()) as CompactBank
+  }
+
+  return bank.rows.map(([paper, subject, topic, prompt, options, answer, why]) => {
+    const [paperId, year, paperName] = bank!.papers[paper] ?? ['', null, '']
+    return { paperId, paperName, year, subject, topic, prompt, options, answer, why: why ?? '' }
+  })
+}
+
 /** One chapter's share of the past papers, with how many sittings it appeared in. */
 type TopicRow = { topic: string; questions: number; years: number; first: number; latest: number }
 
@@ -104,7 +144,7 @@ export function ExamSpace({ slug }: { slug: string }) {
     if (!exam || exam.slug !== 'neet-ug' || bundled.length) return
     let live = true
     Promise.all([
-      fetch('/data/neet-bank.json').then((r) => (r.ok ? (r.json() as Promise<BundledRow[]>) : [])),
+      loadBundledBank().catch(() => [] as BundledRow[]),
       fetch('/data/neet-topics.json').then((r) => (r.ok ? (r.json() as Promise<TopicRow[]>) : [])),
     ])
       .then(([data, topicRows]) => {
